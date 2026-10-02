@@ -7,6 +7,7 @@
 *.key
 credentials.json
 secrets.json
+*.local
 
 # Operating systems
 .DS_Store
@@ -32,6 +33,8 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.pytype/
+.hypothesis/
 .coverage
 .coverage.*
 htmlcov/
@@ -42,20 +45,28 @@ htmlcov/
 dist/
 build/
 *.egg
+*.sqlite
+*.sqlite3
+*.db
 
-# Node, TypeScript, and Next.js
+# Node, TypeScript, and Vite
 node_modules/
 .next/
 out/
 .turbo/
 .vercel/
+.vite/
+dist-ssr/
 *.tsbuildinfo
+.eslintcache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
 # Tests, coverage, and logs
 coverage/
 *.log
 .cache/
+*.lcov
