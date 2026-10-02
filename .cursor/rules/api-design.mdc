@@ -1,0 +1,16 @@
+---
+description: Public API design, error semantics, and developer experience. Use when changing HTTP APIs, webhooks, or SDKs.
+alwaysApply: false
+---
+
+# API design
+
+Public contracts are Type 1. Do not expose persistence rows as the API. Version breaking changes deliberately.
+
+Use consistent resource names, pagination, validation errors, and status codes. Idempotent methods stay idempotent; unsafe retries use idempotency keys where duplicates hurt.
+
+Authentication identifies the caller. Authorization decides the tenant and resource. Document both boundaries.
+
+Error bodies are stable and actionable. Do not leak stack traces, SQL, or secret names.
+
+Write examples that match the schema. If an SDK or CLI is in scope, design the HTTP shape so a thin client can wrap it without a second model.

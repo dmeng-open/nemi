@@ -1,0 +1,17 @@
+---
+description: Frontend architecture and interaction quality for React and Next.js
+globs: "**/*.{tsx,jsx,css}"
+alwaysApply: false
+---
+
+# Frontend
+
+Frontend behavior is part of correctness. A compiling page is not a finished change.
+
+Use semantic HTML and accessible names. Keyboard users can reach, operate, and leave every control. Manage focus when dialogs, navigation, and inline errors appear.
+
+Design loading, empty, error, and partial-failure states as part of the feature. Streaming and long-running work need a visible status and a way to cancel or retry when the product allows it.
+
+Keep client components small and push fetch boundaries to the server when Next.js already provides them. Do not render raw JSON as the interface.
+
+When browser tools exist, verify desktop, tablet, and mobile for the changed flow, including overflow, focus, and error states. Say when that did not happen.

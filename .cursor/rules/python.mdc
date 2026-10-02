@@ -1,0 +1,17 @@
+---
+description: Python engineering standards for future product and tooling code
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python
+
+Target current, typed Python. Use explicit types on public functions and structured return values. Raise specific exceptions; do not swallow them.
+
+Keep I/O, model calls, and pure logic separate so logic can be tested without a network. Prefer the standard library before adding a dependency.
+
+Deterministic code beats a model when the rule is known. Do not hide side effects in constructors or import time.
+
+Configuration comes from the environment or an explicit config object. Never commit secrets, and never log tokens or raw credentials.
+
+Tests assert behavior and edge cases, not private call sequences.

@@ -1,0 +1,14 @@
+---
+description: Logging, traces, and cost signals for future production flows. Use when adding instrumentation or diagnosing runtime behavior.
+alwaysApply: false
+---
+
+# Observability
+
+Important flows should be explainable after the fact. Where the domain has them, correlate request, user, organization, agent run, model call, retrieval, tool call, job, and outbound request.
+
+Prefer structured logs, a few latency and error metrics, and traces on cross-service or multi-step agent work. Record retries, token usage, and cost when AI calls are material.
+
+Never log secrets. Treat prompt and document content as sensitive unless a logging policy allows it.
+
+A new background job or external call ships with a way to see failure, not only success.

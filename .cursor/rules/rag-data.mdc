@@ -1,0 +1,16 @@
+---
+description: Retrieval, ingestion, and RAG evaluation standards. Use when designing or changing search, embeddings, or grounding.
+alwaysApply: false
+---
+
+# RAG and data
+
+A retrieval result is not a finished RAG system. Design ingestion, parsing, chunking, metadata, embedding, filters, and context construction around the user task.
+
+Use hybrid search or reranking only when an evaluation shows a gain. Record the embedding model and index configuration as versioned behavior.
+
+Citations must point at sources the retriever actually returned. Measure citation precision and recall when answers depend on sources.
+
+Evaluate with Recall@K, Precision@K, MRR, NDCG, or a justified substitute on a real dataset. A hand-picked demo is not an evaluation.
+
+Define document update and deletion behavior before indexing production data.

@@ -1,0 +1,17 @@
+---
+description: TypeScript standards for future frontend and shared code
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# TypeScript
+
+Use strict types. Prefer `unknown` plus narrowing over `any`. Export explicit types for public component props and API payloads.
+
+Handle promise failures at the boundary that can show or log them. Do not leave floating promises in UI event handlers.
+
+Keep server data, URL state, and ephemeral UI state distinct. Do not duplicate a server cache in ad-hoc globals.
+
+Validate external input at the edge. Types do not replace runtime validation for network, tool, or user payload data.
+
+Match existing module style. Do not introduce a second state or data-fetching library without a stated gap.

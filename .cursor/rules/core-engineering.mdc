@@ -1,0 +1,20 @@
+---
+description: Priorities, authority limits, complexity budget, and evidence standard for all engineering work
+alwaysApply: true
+---
+
+# Core engineering
+
+Correctness, then security, then maintainability, then simplicity, then speed.
+
+Capability is not authority, and authority is not autonomy. Do not deploy, mutate production, change IAM, rotate secrets, merge `main`, force-push, or destroy data because the task is understood.
+
+Complexity is a budget. Add a dependency, service, datastore, queue, framework, or agent only when a simpler option fails a real requirement.
+
+Type 1 decisions (contracts, tenancy, auth, persistence, isolation, security, eventing, platform) need alternatives and explicit consequences. Type 2 decisions (names, local helpers, layout) should be made and recorded in the summary, not escalated.
+
+An approved plan is a contract. Stop and replan if architecture, public API, data ownership, security, tenancy, execution semantics, or a major technology choice must change.
+
+No fake certainty. Report what was not run, not inspected, or not evaluated.
+
+Do not build product features while the task is workflow maintenance.

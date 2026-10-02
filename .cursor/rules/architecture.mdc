@@ -1,0 +1,16 @@
+---
+description: Architecture boundaries, Type 1 decisions, and when to write an ADR. Use when designing or changing system structure.
+alwaysApply: false
+---
+
+# Architecture
+
+Protect boundaries: domain ownership, public contracts, persistence, tenancy, and process isolation. Do not leak storage models through public APIs.
+
+Before a Type 1 choice, name at least two alternatives, the tradeoff, security impact, operational impact, and migration cost. Record it in `docs/templates/architecture-decision.md` when the choice will outlive the patch.
+
+Prefer one coherent process until load, isolation, or team boundaries justify another. Kubernetes, extra queues, and new datastores need an operational reason, not a diagram.
+
+Reversible internal structure stays local. Do not pause implementation for it.
+
+If the approved architecture is wrong, stop the affected work and return to planning. Do not drift the design inside an implementation diff.

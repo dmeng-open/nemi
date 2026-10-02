@@ -1,0 +1,16 @@
+---
+description: Model strategy, prompting, and fine-tuning bar. Use for LLM, ML, embedding, or model-selection work.
+alwaysApply: false
+---
+
+# AI engineering
+
+Prefer the least powerful method that meets the quality bar, in this order: deterministic software, traditional ML, prompting or structured generation, retrieval, tools, agent orchestration, open-source specialization, fine-tuning.
+
+State latency, quality, and cost together. Do not select a model from a demo prompt.
+
+Structured output is validated in code. A schema in the prompt is not validation.
+
+Fine-tuning requires a measured gap, a baseline, a dataset, a hypothesis, a metric, an expected benefit, and a cost justification. SFT, LoRA, PEFT, or preference optimization are options after that bar, not before it.
+
+Prompt and model changes that affect user-visible behavior need evaluation, not a single anecdotal example.

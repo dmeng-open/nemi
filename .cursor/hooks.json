@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python .cursor/hooks/guard_shell.py",
+        "timeout": 15,
+        "failClosed": true,
+        "matcher": "git push|git reset|git clean|git filter-|gh pr merge|gh release|gh auth token|git credential fill|--no-verify|terraform destroy|kubectl delete|kubectl apply|drop database|DROP DATABASE|dropdb|aws iam|gcloud iam|az role|az ad|Remove-Item|rm -|del /s|rd /s|fly deploy|flyctl deploy|vercel deploy|mkfs|format-volume|curl .*\\|.*sh|wget .*\\|.*sh"
+      }
+    ]
+  }
+}
