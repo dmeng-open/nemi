@@ -25,5 +25,6 @@ Local planning agent. OpenAI for language, mock providers for the world, Postgre
 - Discovery, ranking, conflict removal, the approval gate, and idempotent calendar writes are covered by pytest against SQLite and the mock catalogs. Those tests use a fixed parser so they do not call OpenAI.
 - The OpenAI parser and explainer are wired for a configured `OPENAI_API_KEY`. A missing key stores `openai_unconfigured` instead of inventing a plan.
 - `GET /health` and `GET /health/db` are the process and database checks. Alembic revision `ad1a206d0e8d` is the initial schema.
+- V1 continues from this checklist in [docs/v1-plan.md](../v1-plan.md). Do not add a second `docs/v0-plan.md`.
 - Selection and approval are API transitions over Postgres. The same graph also contains the wait nodes and is resumed in the interrupt test.
 - Calendar creation refuses to run unless the plan is approved. A second approve returns the original event.

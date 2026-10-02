@@ -52,10 +52,25 @@ class PlanningDeps:
     zone: ZoneInfo
     load_preferences: Callable[[], Awaitable[UserPreferences]]
     schedule: Callable[[dict], Awaitable[CalendarExecutionResult]]
+    event_provider_name: str = "mock"
+    place_provider_name: str = "mock"
 
 
 def _ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _zone(state: dict, deps: PlanningDeps) -> ZoneInfo:
+    from zoneinfo import ZoneInfoNotFoundError
+
+    preferences = state.get("user_preferences") or {}
+    name = preferences.get("timezone") if isinstance(preferences, dict) else None
+    if isinstance(name, str) and name.strip():
+        try:
+            return ZoneInfo(name.strip())
+        except ZoneInfoNotFoundError:
+            return deps.zone
+    return deps.zone
 
 
 def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
@@ -113,26 +128,52 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
             raise InvalidSelection("The plan is missing a date.")
         time_start = constraints.time_start or clock_time(8, 0)
         time_end = constraints.time_end or clock_time(22, 0)
-        start = datetime.combine(constraints.date_start, clock_time.min, tzinfo=deps.zone)
-        end = datetime.combine(constraints.date_end, clock_time.max, tzinfo=deps.zone)
-        events = await deps.calendar.get_events(start, end)
+        zone = _zone(state, deps)
+        start = datetime.combine(constraints.date_start, clock_time.min, tzinfo=zone)
+        end = datetime.combine(constraints.date_end, clock_time.max, tzinfo=zone)
+        try:
+            events = await call_with_retries(
+                lambda: deps.calendar.get_events(start, end),
+                base_delay=0.25,
+            )
+        except Exception as exc:
+            from app.core.exceptions import ProviderError
+
+            if not isinstance(exc, ProviderError):
+                raise
+            await deps.log.emit(
+                "calendar_loaded",
+                "completed",
+                {"calendar_read": "unavailable"},
+                duration_ms=_ms(started),
+            )
+            return {
+                "calendar_events": [],
+                "free_windows": [],
+                "calendar_read": "unavailable",
+            }
         windows = free_windows_for_range(
             date_start=constraints.date_start,
             date_end=constraints.date_end,
             time_start=time_start,
             time_end=time_end,
             busy=events,
-            zone=deps.zone,
+            zone=zone,
         )
         await deps.log.emit(
             "calendar_loaded",
             "completed",
-            {"event_count": len(events), "free_windows": len(windows)},
+            {
+                "event_count": len(events),
+                "free_windows": len(windows),
+                "calendar_read": "ok",
+            },
             duration_ms=_ms(started),
         )
         return {
             "calendar_events": [event.model_dump(mode="json") for event in events],
             "free_windows": [window.model_dump(mode="json") for window in windows],
+            "calendar_read": "ok",
         }
 
     async def determine_plan_type(state: dict) -> dict:
@@ -146,27 +187,59 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
 
     async def _search(state: dict, *, kind: str) -> dict:
         constraints = PlanningConstraints.model_validate(state["constraints"])
+        preferences = UserPreferences.model_validate(state.get("user_preferences") or {})
+        if kind == "events" and deps.event_provider_name == "ticketmaster":
+            if not (preferences.home_city or "").strip():
+                return {
+                    "status": "awaiting_location",
+                    "error_code": "city_required",
+                    "candidates": [],
+                }
+        if kind == "restaurants" and deps.place_provider_name == "google":
+            if preferences.latitude is None or preferences.longitude is None:
+                return {
+                    "status": "awaiting_location",
+                    "error_code": "location_required",
+                    "candidates": [],
+                }
+        zone = _zone(state, deps)
+        radius = preferences.default_radius_km or 10
         await deps.log.emit("search_started", "started", {"kind": kind})
         started = time.perf_counter()
         if kind == "events":
             query = EventSearchQuery(
                 date_start=constraints.date_start,
                 date_end=constraints.date_end or constraints.date_start,
-                timezone=deps.zone.key,
+                timezone=zone.key,
                 categories=constraints.categories,
                 budget_max=constraints.budget_max,
                 max_travel_minutes=constraints.max_travel_minutes,
+                city=preferences.home_city,
+                latitude=preferences.latitude,
+                longitude=preferences.longitude,
+                radius_km=radius,
             )
-            found = await call_with_retries(lambda: deps.events.search_events(query))
+            found = await call_with_retries(
+                lambda: deps.events.search_events(query),
+                base_delay=0.25,
+            )
             candidates = [item.to_candidate() for item in found]
         else:
             query = RestaurantSearchQuery(
-                timezone=deps.zone.key,
+                timezone=zone.key,
                 cuisines=constraints.cuisines,
                 budget_max=constraints.budget_max,
                 max_travel_minutes=constraints.max_travel_minutes,
+                latitude=preferences.latitude,
+                longitude=preferences.longitude,
+                radius_km=radius,
+                date_start=constraints.date_start,
+                date_end=constraints.date_end or constraints.date_start,
             )
-            found = await call_with_retries(lambda: deps.restaurants.search_restaurants(query))
+            found = await call_with_retries(
+                lambda: deps.restaurants.search_restaurants(query),
+                base_delay=0.25,
+            )
             candidates = [item.to_candidate() for item in found]
         await deps.log.emit(
             "search_completed",
@@ -178,18 +251,50 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
 
     async def normalize_candidates(state: dict) -> dict:
         started = time.perf_counter()
+        checked = state.get("calendar_read", "ok") == "ok"
         candidates = [Candidate.model_validate(item) for item in state.get("candidates", [])]
         if state.get("plan_type") == "restaurant":
+            from datetime import timedelta
+
             from app.domain.calendar import TimeWindow
 
-            windows = [TimeWindow.model_validate(item) for item in state.get("free_windows", [])]
-            slot = propose_slot(windows)
+            zone = _zone(state, deps)
+            if checked:
+                windows = [TimeWindow.model_validate(item) for item in state.get("free_windows", [])]
+            else:
+                constraints = PlanningConstraints.model_validate(state["constraints"])
+                day = constraints.date_start
+                time_start = constraints.time_start or clock_time(8, 0)
+                time_end = constraints.time_end or clock_time(22, 0)
+                windows = []
+                if day is not None and time_end > time_start:
+                    windows = [
+                        TimeWindow(
+                            start=datetime.combine(day, time_start, tzinfo=zone),
+                            end=datetime.combine(day, time_end, tzinfo=zone),
+                        )
+                    ]
+            slot = propose_slot(windows, timedelta(minutes=90))
             if slot is not None:
                 start, end = slot
                 candidates = [
-                    item.model_copy(update={"start_datetime": start, "end_datetime": end})
+                    item.model_copy(
+                        update={
+                            "start_datetime": start,
+                            "end_datetime": end,
+                            "calendar_checked": checked,
+                        }
+                    )
                     for item in candidates
                 ]
+            else:
+                candidates = [
+                    item.model_copy(update={"calendar_checked": checked}) for item in candidates
+                ]
+        else:
+            candidates = [
+                item.model_copy(update={"calendar_checked": checked}) for item in candidates
+            ]
         await deps.log.emit(
             "candidates_normalized",
             "completed",
@@ -201,7 +306,7 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
     async def rank_candidates(state: dict) -> dict:
         started = time.perf_counter()
         candidates = [Candidate.model_validate(item) for item in state.get("candidates", [])]
-        ranked = await deps.ranker.rank(candidates, ranking_context(state, deps.zone.key))
+        ranked = await deps.ranker.rank(candidates, ranking_context(state, _zone(state, deps).key))
         await deps.log.emit(
             "candidates_ranked",
             "completed",
@@ -227,6 +332,7 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
             {
                 "conflicts_removed": conflicts,
                 "remaining": sum(1 for item in ranked if item.exclusion_reason is None),
+                "calendar_read": state.get("calendar_read", "ok"),
             },
             duration_ms=_ms(started),
         )
@@ -255,7 +361,7 @@ def make_nodes(deps: PlanningDeps) -> dict[str, Callable]:
                 "error_code": code,
                 "errors": [code],
             }
-        context = ranking_context(state, deps.zone.key)
+        context = ranking_context(state, _zone(state, deps).key)
         explanations = await deps.explainer.explain(ranked, context)
         for item in ranked:
             if item.candidate.id in explanations:

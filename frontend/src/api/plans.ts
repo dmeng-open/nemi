@@ -23,6 +23,19 @@ export function clarifyPlan(planId: string, message: string) {
   });
 }
 
+export function continuePlan(planId: string) {
+  return request<{ plan_id: string; status: string }>(`/api/plans/${planId}/continue`, {
+    method: "POST",
+  });
+}
+
+export function rejectCandidate(planId: string, candidateId: string) {
+  return request<Plan>(`/api/plans/${planId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ candidate_id: candidateId }),
+  });
+}
+
 export function selectCandidate(planId: string, candidateId: string) {
   return request<Plan>(`/api/plans/${planId}/select`, {
     method: "POST",

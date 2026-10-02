@@ -17,3 +17,8 @@ class UserPreferences(BaseModel):
     max_travel_minutes: int | None = None
     preferred_days: list[str] = Field(default_factory=list)
     preferred_time_ranges: list[TimeRange] = Field(default_factory=list)
+    home_city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    default_radius_km: float | None = None
+    timezone: str | None = None

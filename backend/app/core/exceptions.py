@@ -89,11 +89,29 @@ class ProviderError(AppError):
         *,
         retryable: bool = False,
         code: str | None = None,
+        status_code: int | None = None,
     ) -> None:
-        super().__init__(message, code=code or "provider_failed")
+        super().__init__(message, code=code or "provider_failed", status_code=status_code)
         self.retryable = retryable
 
 
 class ProviderNotConfigured(ProviderError):
     def __init__(self, message: str) -> None:
-        super().__init__(message, retryable=False, code="provider_unavailable")
+        super().__init__(
+            message,
+            retryable=False,
+            code="provider_not_configured",
+            status_code=409,
+        )
+
+
+class CalendarNotConnected(Exception):
+    """Google Calendar cannot be written. The plan stays awaiting approval."""
+
+
+class CalendarReadFailed(Exception):
+    """Busy time could not be read, so the event was not created."""
+
+
+class CalendarCreateUnconfirmed(Exception):
+    """The provider did not confirm that the event exists."""

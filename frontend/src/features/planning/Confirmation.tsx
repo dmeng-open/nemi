@@ -7,15 +7,19 @@ export function Confirmation({
   timeZone,
   error,
   pending = false,
+  icsHref,
   onCancel,
   onApprove,
+  onConnect,
 }: {
   candidate: Candidate;
   timeZone: string;
   error?: string | null;
   pending?: boolean;
+  icsHref?: string | null;
   onCancel: () => void;
   onApprove: () => void;
+  onConnect?: () => void;
 }) {
   return (
     <section className="rounded-3xl border border-line bg-surface p-6 shadow-[var(--shadow)]" aria-label="Ready to schedule">
@@ -30,7 +34,11 @@ export function Confirmation({
         Travel estimate: {candidate.travel_minutes != null ? `${candidate.travel_minutes} minutes` : formatTravel(null, candidate.distance_km) || "not estimated"}
       </p>
       <p className="mt-2 text-sm text-sage">
-        {candidate.schedule_compatible ? "No conflicts detected." : "This overlaps something on your calendar."}
+        {candidate.calendar_checked === false
+          ? "Schedule was not checked."
+          : candidate.schedule_compatible
+            ? "No conflicts detected."
+            : "This overlaps something on your calendar."}
       </p>
       {error ? (
         <p className="mt-4 text-sm text-danger" role="alert">
@@ -44,6 +52,19 @@ export function Confirmation({
         <Button type="button" onClick={onApprove} disabled={pending}>
           {pending ? "Adding…" : "Add to schedule"}
         </Button>
+        {onConnect ? (
+          <Button type="button" variant="quiet" onClick={onConnect} disabled={pending}>
+            Connect
+          </Button>
+        ) : null}
+        {icsHref ? (
+          <a
+            className="inline-flex h-11 items-center rounded-full border border-line px-5 text-sm"
+            href={icsHref}
+          >
+            Download .ics
+          </a>
+        ) : null}
       </div>
     </section>
   );

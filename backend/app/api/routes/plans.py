@@ -12,6 +12,7 @@ from app.schemas.plans import (
     PlanCreatedResponse,
     PlanResponse,
     PlanSummaryResponse,
+    RejectRequest,
     SelectRequest,
     TimelineResponse,
 )
@@ -63,6 +64,17 @@ async def get_timeline(
     return await build_timeline_response(session, plan_id)
 
 
+@router.post("/{plan_id}/continue", status_code=202, response_model=PlanCreatedResponse)
+async def continue_plan(
+    plan_id: uuid.UUID,
+    background: BackgroundTasks,
+    orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
+) -> PlanCreatedResponse:
+    await orchestrator.continue_plan(plan_id)
+    background.add_task(orchestrator.run_discovery, plan_id)
+    return PlanCreatedResponse(plan_id=str(plan_id), status="processing")
+
+
 @router.post("/{plan_id}/clarify", response_model=PlanCreatedResponse)
 async def clarify_plan(
     plan_id: uuid.UUID,
@@ -73,6 +85,18 @@ async def clarify_plan(
     await orchestrator.clarify(plan_id, body.message)
     background.add_task(orchestrator.run_discovery, plan_id)
     return PlanCreatedResponse(plan_id=str(plan_id), status="processing")
+
+
+@router.post("/{plan_id}/reject", response_model=PlanResponse)
+async def reject_candidate(
+    plan_id: uuid.UUID,
+    body: RejectRequest,
+    orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
+    session: AsyncSession = Depends(get_db),
+) -> PlanResponse:
+    await orchestrator.reject(plan_id, body.candidate_id)
+    session.expire_all()
+    return await build_plan_response(session, plan_id)
 
 
 @router.post("/{plan_id}/select", response_model=PlanResponse)

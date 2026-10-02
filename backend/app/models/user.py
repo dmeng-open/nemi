@@ -40,6 +40,11 @@ class UserPreference(Base):
     max_travel_minutes: Mapped[int | None] = mapped_column(default=None)
     preferred_days: Mapped[list] = mapped_column(JSON, default=list)
     preferred_time_ranges: Mapped[list] = mapped_column(JSON, default=list)
+    home_city: Mapped[str | None] = mapped_column(String(80), default=None)
+    latitude: Mapped[float | None] = mapped_column(Float, default=None)
+    longitude: Mapped[float | None] = mapped_column(Float, default=None)
+    default_radius_km: Mapped[float | None] = mapped_column(Float, default=None)
+    timezone: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

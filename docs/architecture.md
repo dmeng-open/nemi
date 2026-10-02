@@ -159,7 +159,7 @@ flowchart LR
   ranker --> futureRanker[Future model ranker]
 ```
 
-`EVENT_PROVIDER`, `PLACE_PROVIDER`, and `CALENDAR_PROVIDER` select the implementation. `mock` and `local` are the V0 defaults. The Ticketmaster, Google Places, and Google Calendar classes are registered and raise a clear unavailable error. They do not call those APIs.
+`EVENT_PROVIDER`, `PLACE_PROVIDER`, and `CALENDAR_PROVIDER` select the implementation. `mock` and `local` are the defaults and do not call the network. `ticketmaster`, `google` places, and `google` calendar call those APIs with `httpx` when selected. A missing key or a missing Google connection fails that provider. Demo results are not substituted.
 
 Mock catalogs are deterministic. Event dates are computed from the query’s date range and a weekday, so “Saturday” stays meaningful as the clock moves. Distances are estimates from a fixed demo neighborhood, not from device GPS.
 
@@ -179,7 +179,7 @@ Every provider result is converted to `Candidate` before it leaves the provider.
 
 Weights are configuration. They must sum to 1. Ties break on candidate id.
 
-Hard exclusions happen after scoring, in `verify_candidates`: schedule overlap, travel over the limit, or price over the ceiling. Excluded rows are stored with their scores and `shown = false`. The three shown rows are the best remaining scores. That table is the future training set: one row per considered candidate, with component scores, rank, and whether it was shown, selected, approved, scheduled, or rejected.
+Hard exclusions happen after scoring, in `verify_candidates`: schedule overlap, travel over the limit, or price over the ceiling. Those exclusions apply only when the calendar read succeeded. An unavailable calendar uses a neutral schedule score of 0.5 and leaves the candidate eligible. Excluded rows are stored with their scores and `shown = false`. The three shown rows are the best remaining scores. That table is the future training set: one row per considered candidate, with component scores, rank, and whether it was shown, selected, approved, scheduled, or rejected. Scores stay on the candidate row. Interaction properties carry the candidate join key, not the scores.
 
 ## Approval and calendar writes
 
@@ -198,7 +198,7 @@ Cancelling the confirmation clears the selection and writes nothing.
 | Table | Role |
 | --- | --- |
 | `users` | The seeded local user |
-| `user_preferences` | Categories, cuisines, dislikes, budget, travel, days, time ranges |
+| `user_preferences` | Categories, cuisines, dislikes, budget, travel, days, time ranges, optional home city, coordinates, radius, and timezone |
 | `planning_sessions` | One request and its status |
 | `planning_constraints` | The structured constraints for that session |
 | `recommendations` | The recommendation set |
@@ -208,6 +208,8 @@ Cancelling the confirmation clears the selection and writes nothing.
 | `agent_runs` | One discovery or follow-up attempt |
 | `agent_run_events` | Safe workflow events |
 | `interaction_events` | Behavior rows for a later pipeline |
+| `oauth_connections` | One Google Calendar connection for the local user. The refresh token is plaintext and is read only through `OAuthConnectionRepository` |
+| `oauth_states` | Single-use OAuth nonces, stored as a SHA-256 hash, with an allowlisted return path |
 
 Agent events store time, session, type, duration, status, safe metadata, and an error code. They do not store chain-of-thought or the raw model request.
 
@@ -220,6 +222,8 @@ Agent events store time, session, type, duration, status, safe metadata, and an 
 | `GET` | `/api/plans/{id}` | Plan, timeline, and shown recommendations |
 | `GET` | `/api/plans/{id}/timeline` | Timeline only |
 | `POST` | `/api/plans/{id}/clarify` | Answer the one clarification question |
+| `POST` | `/api/plans/{id}/continue` | Resume the same plan after `awaiting_location` |
+| `POST` | `/api/plans/{id}/reject` | Mark one shown candidate rejected |
 | `POST` | `/api/plans/{id}/select` | Choose a shown candidate |
 | `DELETE` | `/api/plans/{id}/selection` | Leave the confirmation step without writing |
 | `POST` | `/api/plans/{id}/approve` | Approve or decline the calendar write |
@@ -228,12 +232,17 @@ Agent events store time, session, type, duration, status, safe metadata, and an 
 | `GET` / `POST` | `/api/calendar/events` | List or add a personal event |
 | `POST` | `/api/calendar/sample` | Add the sample Saturday events once per date |
 | `DELETE` | `/api/calendar/events/{id}` | Delete a personal event |
-| `GET` | `/api/integrations` | Active providers, timezone, OpenAI configuration |
+| `GET` | `/api/integrations` | Active providers, connection state, timezone, OpenAI configuration. No upstream probe |
+| `POST` | `/api/integrations/google/calendar/connect` | Start Google Calendar OAuth |
+| `GET` | `/api/integrations/google/calendar/callback` | Exchange the code and redirect to the allowlisted path |
+| `DELETE` | `/api/integrations/google/calendar/disconnect` | Delete the local user's Google connection |
+| `GET` | `/api/calendar/window` | Busy time from the active calendar provider |
+| `GET` | `/api/interactions` | Paginated interaction events for the local user |
 | `GET` | `/health` and `/health/db` | Process and database checks |
 
 Error bodies use `{ "error": { "code", "message" } }`. The UI shows the message, not a traceback.
 
-Dates in responses are timezone-aware ISO timestamps. The client formats them in the timezone reported by `/api/integrations` (`APP_TIMEZONE`, default `America/Chicago`).
+Dates in responses are timezone-aware ISO timestamps. The client formats them in the saved preference timezone when one is set, otherwise in the timezone reported by `/api/integrations` (`APP_TIMEZONE`, default `America/Chicago`).
 
 ## Failure behavior
 
@@ -260,7 +269,7 @@ The Vite dev server proxies `/api` and `/health` to FastAPI.
 
 These are boundaries, not V0 work.
 
-- V1: real Ticketmaster, Google Places, and Google Calendar implementations of the existing protocols, selected by env.
+- V1, in progress on this tree: Ticketmaster, Google Places, and Google Calendar behind the existing provider seam. The implementation contract is [v1-plan.md](v1-plan.md). Mock and local mode still run with no keys.
 - V2: train a ranker on `recommendation_candidates` and `interaction_events`, then add another `CandidateRanker`. The heuristic remains the baseline.
 - V3: publish the dotted interaction topics. Consumers can build features and training sets. Kafka is not justified before there is a real second consumer.
 - V4: move Postgres, files, images, and secrets onto managed infrastructure when the app leaves one machine.

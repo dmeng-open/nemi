@@ -22,6 +22,12 @@ class Candidate(BaseModel):
     price_max: float | None = None
     price_level: int | None = None
     rating: float | None = None
+    review_count: int | None = None
     source: str
     source_url: str | None = None
     image_url: str | None = None
+    provider: str | None = None
+    external_id: str | None = None
+    retrieved_at: datetime | None = None
+    travel_time_is_estimate: bool = False
+    calendar_checked: bool = True

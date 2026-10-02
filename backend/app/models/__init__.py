@@ -2,6 +2,7 @@
 
 from app.models.agent import AgentRun, AgentRunEvent, InteractionEvent
 from app.models.calendar import CalendarAction, LocalCalendarEvent
+from app.models.oauth import OAuthConnection, OAuthState
 from app.models.planning import (
     PlanningConstraint,
     PlanningSession,
@@ -18,6 +19,8 @@ __all__ = [
     "CalendarAction",
     "InteractionEvent",
     "LocalCalendarEvent",
+    "OAuthConnection",
+    "OAuthState",
     "PlanningConstraint",
     "PlanningSession",
     "Recommendation",

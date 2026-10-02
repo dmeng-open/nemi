@@ -119,6 +119,12 @@ class OpenAIConstraintParser:
         raise LLMValidationError()
 
 
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
 class _ExplanationItem(BaseModel):
     candidate_id: str
     explanation: str
@@ -147,10 +153,19 @@ class OpenAIExplainer:
                 {
                     "candidate_id": item.candidate.id,
                     "title": item.candidate.title,
+                    "venue": item.candidate.venue,
+                    "address": item.candidate.address,
+                    "start": _iso(item.candidate.start_datetime),
+                    "end": _iso(item.candidate.end_datetime),
                     "categories": item.candidate.categories,
-                    "price": item.candidate.price_min,
                     "travel_minutes": item.candidate.estimated_travel_minutes,
-                    "fits_schedule": item.schedule_compatible,
+                    "rating": (
+                        round(item.candidate.rating, 1)
+                        if item.candidate.rating is not None
+                        else None
+                    ),
+                    "calendar_checked": item.candidate.calendar_checked,
+                    "fits_schedule": item.schedule_compatible and item.candidate.calendar_checked,
                 }
                 for item in shown
             ],
@@ -167,4 +182,4 @@ class OpenAIExplainer:
         if not isinstance(batch, _ExplanationBatch):
             batch = _ExplanationBatch.model_validate(batch)
         generated = {item.candidate_id: item.explanation for item in batch.items}
-        return merge_explanations(shown, generated, fallback)
+        return merge_explanations(shown, generated, fallback, context)

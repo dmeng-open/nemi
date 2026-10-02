@@ -22,8 +22,21 @@ def compile_planning_graph(nodes: dict, checkpointer: MemorySaver | None = None)
         lambda state: state.get("plan_type") or "event",
         {"event": "search_events", "restaurant": "search_restaurants"},
     )
-    graph.add_edge("search_events", "normalize_candidates")
-    graph.add_edge("search_restaurants", "normalize_candidates")
+    def _after_search(state: PlanningState) -> str:
+        if state.get("status") == "awaiting_location":
+            return "stop"
+        return "continue"
+
+    graph.add_conditional_edges(
+        "search_events",
+        _after_search,
+        {"stop": END, "continue": "normalize_candidates"},
+    )
+    graph.add_conditional_edges(
+        "search_restaurants",
+        _after_search,
+        {"stop": END, "continue": "normalize_candidates"},
+    )
     graph.add_edge("normalize_candidates", "rank_candidates")
     graph.add_edge("rank_candidates", "verify_candidates")
     graph.add_edge("verify_candidates", "generate_recommendations")

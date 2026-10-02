@@ -54,6 +54,11 @@ def preferences_to_domain(row: UserPreference) -> UserPreferences:
         max_travel_minutes=row.max_travel_minutes,
         preferred_days=list(row.preferred_days or []),
         preferred_time_ranges=ranges,
+        home_city=row.home_city,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        default_radius_km=row.default_radius_km,
+        timezone=row.timezone,
     )
 
 

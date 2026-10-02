@@ -14,6 +14,7 @@ from app.core.exceptions import AppError
 from app.core.logging import configure_logging, safe_error_text
 from app.db.base import Base
 from app.db.session import create_engine, create_session_factory
+from app.providers.health import get_provider_health
 from app.repositories.users import ensure_local_user
 from app.services.planning.orchestrator import PlanningOrchestrator
 
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     factory = create_session_factory(engine)
     app.state.engine = engine
     app.state.session_factory = factory
+    app.state.provider_health = get_provider_health()
     if settings.auto_create_schema or settings.database_url.startswith("sqlite"):
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)

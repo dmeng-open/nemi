@@ -23,9 +23,13 @@ from app.core.config import Settings
 from app.core.exceptions import (
     AppError,
     ApprovalRequired,
+    CalendarCreateUnconfirmed,
+    CalendarNotConnected,
+    CalendarReadFailed,
     InvalidSelection,
     PlanNotFound,
     PlanStateError,
+    ProviderError,
     ScheduleConflictError,
 )
 from app.core.logging import safe_error_text
@@ -40,6 +44,7 @@ from app.models.planning import (
     RecommendationCandidate,
 )
 from app.models.user import LOCAL_USER_ID
+from app.providers.http import bind_plan_id, reset_plan_id
 from app.providers.factory import (
     build_calendar_provider,
     build_event_provider,
@@ -129,7 +134,22 @@ class PlanningOrchestrator:
             _add_event(session, run, "request_received", "completed", {})
             await session.commit()
 
+    async def continue_plan(self, plan_id: uuid.UUID) -> None:
+        async with self.session_factory() as session:
+            plan = await _owned_plan(session, plan_id)
+            if plan.status != "awaiting_location":
+                raise PlanStateError("This plan is not waiting for a location.")
+            plan.status = "processing"
+            plan.error_code = None
+            plan.error_message = None
+            run = AgentRun(session_id=plan.id, user_id=plan.user_id, status="running")
+            session.add(run)
+            await session.flush()
+            _add_event(session, run, "request_received", "completed", {})
+            await session.commit()
+
     async def run_discovery(self, plan_id: uuid.UUID) -> None:
+        token = bind_plan_id(str(plan_id))
         try:
             async with self.session_factory() as session:
                 plan = await _owned_plan(session, plan_id)
@@ -137,6 +157,11 @@ class PlanningOrchestrator:
                 if run is None:
                     raise PlanStateError("This plan has no agent run.")
                 deps = await self._deps(session, run)
+                preferences = await get_preferences(session, LOCAL_USER_ID)
+                if preferences.timezone:
+                    from zoneinfo import ZoneInfo
+
+                    deps.zone = ZoneInfo(preferences.timezone)
                 nodes = make_nodes(deps)
                 deps.schedule = default_schedule(deps)
                 graph = compile_planning_graph(nodes, MemorySaver())
@@ -160,6 +185,8 @@ class PlanningOrchestrator:
                 extra={"plan_id": str(plan_id), "detail": safe_error_text(exc)},
             )
             await self.mark_failed(plan_id, exc)
+        finally:
+            reset_plan_id(token)
 
     async def select(self, plan_id: uuid.UUID, candidate_id: str) -> None:
         async with self.session_factory() as session:
@@ -186,7 +213,47 @@ class PlanningOrchestrator:
                     session, run, "candidate_selected", "completed", {"candidate_id": candidate_id}
                 )
                 _add_event(session, run, "approval_requested", "started", {})
-            _interact(session, plan, "recommendation_selected", candidate_id)
+            _interact(
+                session,
+                plan,
+                "recommendation_selected",
+                candidate_id,
+                properties=_interaction_properties(match),
+            )
+            await session.commit()
+
+    async def reject(self, plan_id: uuid.UUID, candidate_id: str) -> None:
+        async with self.session_factory() as session:
+            plan = await _owned_plan(session, plan_id)
+            if plan.status not in {"awaiting_selection", "awaiting_approval"}:
+                raise PlanStateError("Not this is available while you are choosing.")
+            rows = await _candidate_rows(session, plan.id)
+            match = next(
+                (row for row in rows if row.candidate_id == candidate_id and row.shown),
+                None,
+            )
+            if match is None:
+                raise InvalidSelection()
+            if plan.status == "awaiting_approval" and plan.selected_candidate_id != candidate_id:
+                raise PlanStateError("Not this is available while you are choosing.")
+            already_rejected = match.rejected
+            match.rejected = True
+            if plan.selected_candidate_id == candidate_id:
+                for row in rows:
+                    row.selected = False
+                plan.selected_candidate_id = None
+                plan.approved = False
+                plan.status = "awaiting_selection"
+                plan.error_code = None
+                plan.error_message = None
+            if not already_rejected:
+                _interact(
+                    session,
+                    plan,
+                    "recommendation_rejected",
+                    candidate_id,
+                    properties=_interaction_properties(match),
+                )
             await session.commit()
 
     async def clear_selection(self, plan_id: uuid.UUID) -> None:
@@ -204,6 +271,13 @@ class PlanningOrchestrator:
             await session.commit()
 
     async def approve(self, plan_id: uuid.UUID, approved: bool) -> None:
+        token = bind_plan_id(str(plan_id))
+        try:
+            await self._approve(plan_id, approved)
+        finally:
+            reset_plan_id(token)
+
+    async def _approve(self, plan_id: uuid.UUID, approved: bool) -> None:
         async with self.session_factory() as session:
             plan = await _owned_plan(session, plan_id)
             run = await _latest_run(session, plan.id)
@@ -260,6 +334,27 @@ class PlanningOrchestrator:
                     )
                 await session.commit()
                 raise
+            except (CalendarNotConnected, CalendarReadFailed, CalendarCreateUnconfirmed) as exc:
+                code = {
+                    CalendarNotConnected: "calendar_not_connected",
+                    CalendarReadFailed: "calendar_read_failed",
+                    CalendarCreateUnconfirmed: "calendar_write_unconfirmed",
+                }[type(exc)]
+                plan.status = "awaiting_approval"
+                plan.approved = False
+                plan.error_code = code
+                plan.error_message = SAFE_MESSAGES[code]
+                if run is not None:
+                    _add_event(
+                        session,
+                        run,
+                        "calendar_write_failed",
+                        "failed",
+                        {"error_code": code},
+                        error_code=code,
+                    )
+                await session.commit()
+                return
             for row in rows:
                 row.approved = row.candidate_id == candidate.id
                 row.scheduled = row.candidate_id == candidate.id
@@ -267,13 +362,18 @@ class PlanningOrchestrator:
             plan.status = "scheduled"
             plan.error_code = None
             plan.error_message = None
-            if not result.replayed:
-                if run is not None:
-                    run.status = "completed"
-                    run.finished_at = datetime.now(UTC)
-                    _add_event(session, run, "calendar_write_completed", "completed", {})
-                _interact(session, plan, "plan_approved", candidate.id)
-                _interact(session, plan, "plan_scheduled", candidate.id)
+            if not result.replayed and run is not None:
+                run.status = "completed"
+                run.finished_at = datetime.now(UTC)
+                _add_event(session, run, "calendar_write_completed", "completed", {})
+            if not await _scheduled_interaction_exists(session, plan.id, candidate.id):
+                _interact(
+                    session,
+                    plan,
+                    "plan_scheduled",
+                    candidate.id,
+                    properties=_interaction_properties(match),
+                )
             await session.commit()
 
     async def mark_failed(self, plan_id: uuid.UUID, exc: Exception) -> None:
@@ -315,6 +415,8 @@ class PlanningOrchestrator:
             zone=self.settings.zone(),
             load_preferences=load_preferences,
             schedule=default_schedule_placeholder,
+            event_provider_name=self.settings.event_provider,
+            place_provider_name=self.settings.place_provider,
         )
         return deps
 
@@ -347,12 +449,6 @@ class PlanningOrchestrator:
                 )
             )
         if ranked_raw:
-            await session.execute(
-                delete(RecommendationCandidate).where(RecommendationCandidate.session_id == plan.id)
-            )
-            await session.execute(
-                delete(Recommendation).where(Recommendation.session_id == plan.id)
-            )
             recommendation = Recommendation(
                 session_id=plan.id,
                 user_id=plan.user_id,
@@ -360,30 +456,39 @@ class PlanningOrchestrator:
             )
             session.add(recommendation)
             await session.flush()
+            stored: list[tuple[RecommendationCandidate, RankedCandidate]] = []
             for item in ranked_raw:
                 ranked = RankedCandidate.model_validate(item)
-                session.add(
-                    RecommendationCandidate(
-                        recommendation_id=recommendation.id,
-                        session_id=plan.id,
-                        user_id=plan.user_id,
-                        candidate_id=ranked.candidate.id,
-                        candidate_type=ranked.candidate.candidate_type,
-                        rank_position=ranked.rank_position,
-                        final_score=ranked.final_score,
-                        preference_score=ranked.components.preference,
-                        schedule_score=ranked.components.schedule,
-                        distance_score=ranked.components.distance,
-                        price_score=ranked.components.price,
-                        quality_score=ranked.components.quality,
-                        shown=ranked.shown,
-                        exclusion_reason=ranked.exclusion_reason,
-                        explanation=ranked.explanation,
-                        payload=ranked.candidate.model_dump(mode="json"),
-                    )
+                row = RecommendationCandidate(
+                    recommendation_id=recommendation.id,
+                    session_id=plan.id,
+                    user_id=plan.user_id,
+                    candidate_id=ranked.candidate.id,
+                    candidate_type=ranked.candidate.candidate_type,
+                    rank_position=ranked.rank_position,
+                    final_score=ranked.final_score,
+                    preference_score=ranked.components.preference,
+                    schedule_score=ranked.components.schedule,
+                    distance_score=ranked.components.distance,
+                    price_score=ranked.components.price,
+                    quality_score=ranked.components.quality,
+                    shown=ranked.shown,
+                    exclusion_reason=ranked.exclusion_reason,
+                    explanation=ranked.explanation,
+                    payload=ranked.candidate.model_dump(mode="json"),
                 )
+                session.add(row)
+                stored.append((row, ranked))
+            await session.flush()
+            for row, ranked in stored:
                 if ranked.shown:
-                    _interact(session, plan, "recommendation_shown", ranked.candidate.id)
+                    _interact(
+                        session,
+                        plan,
+                        "recommendation_shown",
+                        ranked.candidate.id,
+                        properties=_interaction_properties(row),
+                    )
         plan.status = status
         if status != "failed":
             run.status = "completed"
@@ -433,11 +538,39 @@ def _add_event(
     )
 
 
+def _interaction_properties(row: RecommendationCandidate) -> dict:
+    payload = row.payload or {}
+    provider = payload.get("provider") or payload.get("source")
+    external_id = payload.get("external_id") or row.candidate_id
+    return {
+        "recommendation_candidate_id": str(row.id),
+        "provider": provider,
+        "external_id": external_id,
+        "candidate_type": row.candidate_type,
+    }
+
+
+async def _scheduled_interaction_exists(
+    session: AsyncSession,
+    plan_id: uuid.UUID,
+    candidate_id: str,
+) -> bool:
+    found = await session.scalar(
+        select(InteractionEvent.id).where(
+            InteractionEvent.session_id == plan_id,
+            InteractionEvent.candidate_id == candidate_id,
+            InteractionEvent.event_name == "plan_scheduled",
+        )
+    )
+    return found is not None
+
+
 def _interact(
     session: AsyncSession,
     plan: PlanningSession,
     event_name: str,
     candidate_id: str | None,
+    properties: dict | None = None,
 ) -> None:
     session.add(
         InteractionEvent(
@@ -446,7 +579,7 @@ def _interact(
             candidate_id=candidate_id,
             event_name=event_name,
             topic=event_name.replace("_", "."),
-            properties={},
+            properties=properties or {},
         )
     )
 
@@ -496,6 +629,8 @@ async def _invoke(graph, initial: dict, config: RunnableConfig) -> dict:
 
 
 def _classify(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, ProviderError):
+        return exc.code, exc.message
     if isinstance(exc, AppError):
         return exc.code, SAFE_MESSAGES.get(exc.code, exc.message)
     return "planning_failed", SAFE_MESSAGES["planning_failed"]

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -36,3 +37,15 @@ class CalendarExecutionResult(BaseModel):
     end: datetime
     location: str | None = None
     replayed: bool = False
+
+
+class CalendarGateway(Protocol):
+    async def get_events(self, start: datetime, end: datetime) -> list[CalendarEvent]: ...
+
+    async def create_event(
+        self,
+        draft: NewCalendarEvent,
+        *,
+        idempotency_key: str,
+        candidate_id: str,
+    ) -> CalendarExecutionResult: ...
