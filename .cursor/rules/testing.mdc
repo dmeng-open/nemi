@@ -1,0 +1,14 @@
+---
+description: Testing philosophy and which test boundary to use. Use when adding or changing tests.
+alwaysApply: false
+---
+
+# Testing
+
+Maximize confidence, not test count. Cover the behavior a regression would break, including one edge and one failure path when those can happen.
+
+Choose the boundary that matches the risk: unit, integration, contract, API, browser, regression, or AI evaluation. Do not mirror private implementation steps.
+
+A failing test should name the broken behavior. Avoid sleeps and order-dependent fixtures when a deterministic hook exists.
+
+Do not delete or weaken a test to make a change pass without explaining the product decision. Tests that never fail under a broken behavior are not evidence.

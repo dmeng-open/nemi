@@ -1,0 +1,16 @@
+---
+description: Backend service boundaries, failure behavior, and data integrity. Use when changing server-side application code.
+alwaysApply: false
+---
+
+# Backend
+
+Model the domain in explicit types and functions. Keep request handling, domain rules, and persistence adapters separate.
+
+Define failure behavior: what retries, what is idempotent, what aborts, and what the caller observes. Timeouts are part of the interface.
+
+Protect invariants in one place, not in every caller. Multi-step writes state their consistency expectation.
+
+Background work is visible: status, retry, and a way to detect a stuck job. Do not add a queue until synchronous handling fails a real constraint.
+
+Logs and errors must be diagnosable without secrets or unnecessary raw user content.

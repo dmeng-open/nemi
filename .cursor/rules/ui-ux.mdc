@@ -1,0 +1,17 @@
+---
+description: Product UI quality bar for visual and interaction design
+globs: "**/*.{tsx,jsx,css}"
+alwaysApply: false
+---
+
+# UI and UX
+
+Design the user job, journey, and information hierarchy before decoration. Do not ship a generic card grid, gradient wallpaper, or chatbot clone as the default.
+
+Use a clear type hierarchy, consistent spacing, and intentional whitespace. Motion explains a change of state; it does not decorate.
+
+Target WCAG 2.2 AA where practical: contrast, focus visibility, labels, errors tied to fields, and hit targets that work on touch.
+
+AI surfaces show progress, uncertainty, citations or provenance when answers depend on sources, tool activity when tools run, and a recovery path after failure. Do not expose internal agent topology as the product UI.
+
+Destructive actions require a specific confirmation and an obvious recovery path when recovery exists.

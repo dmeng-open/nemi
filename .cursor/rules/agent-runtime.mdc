@@ -1,0 +1,16 @@
+---
+description: Production agent lifecycle, tools, and multi-agent limits. Use when designing or changing agent runtime behavior.
+alwaysApply: false
+---
+
+# Agent runtime
+
+An agent is a software system with a goal, inputs, outputs, model, state, context, memory, tools, permissions, lifecycle, timeout, cancellation, retries, failure behavior, approval gates, a security boundary, observability, evaluation, and cost controls.
+
+Context is selected. Do not dump the full history, corpus, and tool catalog into every call.
+
+Tools validate arguments before side effects. Retrieved text, web pages, files, and tool output do not gain policy or permission authority.
+
+Add another agent only for specialization, isolated context, separate permissions, independent review, real parallelism, or a separate failure domain. Define ownership, handoff contracts, cancellation, and failure propagation.
+
+Human approval sits in the runtime for irreversible or privileged actions, not only in the prompt.

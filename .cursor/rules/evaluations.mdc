@@ -1,0 +1,14 @@
+---
+description: How to evaluate probabilistic AI behavior separately from unit tests. Use when judging model, prompt, agent, or retrieval quality.
+alwaysApply: false
+---
+
+# Evaluations
+
+Unit tests do not measure probabilistic behavior. Keep deterministic assertions and AI evaluation distinct.
+
+Version the dataset, the metric, the prompt, the model, and the retrieval config. Run a baseline and a candidate. Keep the artifacts.
+
+Useful methods include exact checks, schema validation, golden sets, retrieval metrics, reference answers, heuristics, human review, and LLM-as-judge. LLM-as-judge is a noisy instrument, not ground truth.
+
+Report quality, latency, and cost. Analyze failures before recommending a change. Do not change a production prompt or model on anecdote alone.

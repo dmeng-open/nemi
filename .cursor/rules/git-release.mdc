@@ -1,0 +1,16 @@
+---
+description: Git branch, commit, pull request, and release authority. Use when committing, pushing, opening PRs, or releasing.
+alwaysApply: false
+---
+
+# Git and release
+
+`main` is protected. Work on `feature/`, `fix/`, or `chore/` branches. Commit only when the user or release workflow asked for a commit.
+
+Commit messages state intent. Avoid "update files", "misc", and "fix stuff". Do not require Conventional Commits unless this repository later adopts them.
+
+The release path is verify, then release engineer, then commit, push the feature branch, pull request, CI, and human merge. Verification evidence comes before the pull request.
+
+Agents may push non-protected branches and open pull requests. Agents do not merge `main`, force-push, skip hooks, rewrite shared history, or publish a release without explicit human approval.
+
+Pull request text uses `.github/pull_request_template.md` and drops sections that do not apply.

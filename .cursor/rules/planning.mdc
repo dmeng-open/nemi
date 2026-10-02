@@ -1,0 +1,14 @@
+---
+description: Planning gates and plan contract. Use when planning features, decomposing work, or deciding whether to code.
+alwaysApply: false
+---
+
+# Planning
+
+Explore the repository before planning a non-trivial change. Separate facts, assumptions, decisions, recommendations, risks, and open questions.
+
+Large, architecture-sensitive, or security-sensitive work stops for human plan approval before implementation. Narrow, obvious, reversible work with no security or architecture impact may proceed after a short plan.
+
+The plan states the user outcome, invariants, data flow, API and persistence impact, UI impact, AI impact, tests, evaluation, rollout, and ordered steps. Use `docs/templates/implementation-plan.md`.
+
+Do not write production code in a planning task. Do not treat an unapproved Type 1 recommendation as an instruction to build.
