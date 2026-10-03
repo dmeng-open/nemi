@@ -14,14 +14,18 @@ from app.models.agent import AgentRun, AgentRunEvent, InteractionEvent
 from app.models.calendar import LocalCalendarEvent
 from app.models.planning import PlanningSession, Recommendation, RecommendationCandidate
 from app.models.user import LOCAL_USER_ID
-from app.providers.factory import build_calendar_provider, build_event_provider, build_restaurant_provider
+from app.providers.factory import (
+    build_calendar_provider,
+    build_event_provider,
+    build_restaurant_provider,
+)
 from app.providers.health import InMemoryProviderHealth
 from app.repositories.users import get_preference_row
 from app.services.integrations_status import build_integrations_response
 from app.services.planning.orchestrator import PlanningOrchestrator
 from app.services.recommendations.explanations import merge_explanations, template_explanation
 from sqlalchemy import func, select
-from tests.conftest import CHICAGO, FROZEN_NOW
+from tests.conftest import FROZEN_NOW
 from tests.test_workflow import FixedParser, friday_dinner, saturday_event
 
 

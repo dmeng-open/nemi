@@ -32,6 +32,13 @@ class LocalCalendarProvider:
         rows = await self.repository.list_between(self.user_id, as_utc(start), as_utc(end))
         return [row_to_event(row) for row in rows]
 
+    async def delete_event(self, event_id: str) -> bool:
+        try:
+            parsed = uuid.UUID(event_id)
+        except ValueError:
+            return False
+        return await self.repository.delete_event(parsed, self.user_id)
+
     async def create_event(
         self,
         draft: NewCalendarEvent,

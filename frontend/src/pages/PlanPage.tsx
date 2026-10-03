@@ -8,10 +8,12 @@ import {
   approvePlan,
   clarifyPlan,
   clearSelection,
+  commandExecution,
   continuePlan,
   createPlan,
   getPlan,
   rejectCandidate,
+  revisePlan,
   selectCandidate,
 } from "@/api/plans";
 import { getPreferences } from "@/api/preferences";
@@ -94,6 +96,13 @@ export function PlanPage() {
         }}
         onCancel={() => action.mutate(() => clearSelection(plan.plan_id))}
         onApprove={() => action.mutate(() => approvePlan(plan.plan_id, true))}
+        onApproveItinerary={(itineraryId) =>
+          action.mutate(() => approvePlan(plan.plan_id, true, itineraryId))
+        }
+        onRevise={(message) => action.mutate(() => revisePlan(plan.plan_id, message))}
+        onRetryExecution={() => action.mutate(() => commandExecution(plan.plan_id, "retry"))}
+        onKeepPartial={() => action.mutate(() => commandExecution(plan.plan_id, "keep"))}
+        onCancelCreated={() => action.mutate(() => commandExecution(plan.plan_id, "cancel_created", true))}
         onContinue={() => action.mutate(() => continuePlan(plan.plan_id))}
         onConnect={() =>
           action.mutate(async () => {

@@ -18,6 +18,7 @@ from app.agents.llm import (
     UnconfiguredParser,
 )
 from app.agents.nodes import EventLog, PlanningDeps, default_schedule, make_nodes
+from app.agents.itinerary.routing import is_itinerary_request
 from app.core.clock import Clock, SystemClock
 from app.core.config import Settings
 from app.core.exceptions import (
@@ -44,12 +45,12 @@ from app.models.planning import (
     RecommendationCandidate,
 )
 from app.models.user import LOCAL_USER_ID
-from app.providers.http import bind_plan_id, reset_plan_id
 from app.providers.factory import (
     build_calendar_provider,
     build_event_provider,
     build_restaurant_provider,
 )
+from app.providers.http import bind_plan_id, reset_plan_id
 from app.repositories.users import ensure_local_user, get_preferences
 from app.services.calendar.scheduling import schedule_approved_plan
 from app.services.ranking.heuristic import HeuristicRanker
@@ -95,12 +96,14 @@ class PlanningOrchestrator:
         parser: ConstraintParser | None = None,
         explainer: Explainer | None = None,
         clock: Clock | None = None,
+        checkpointer=None,
     ) -> None:
         self.session_factory = session_factory
         self.settings = settings
         self.parser = parser or _default_parser(settings)
         self.explainer = explainer or _default_explainer(settings)
         self.clock = clock or SystemClock()
+        self.checkpointer = checkpointer or MemorySaver()
 
     async def create_plan(self, message: str) -> uuid.UUID:
         async with self.session_factory() as session:
@@ -149,6 +152,14 @@ class PlanningOrchestrator:
             await session.commit()
 
     async def run_discovery(self, plan_id: uuid.UUID) -> None:
+        if await self._request_is_itinerary(plan_id):
+            from app.agents.itinerary.runtime import run_itinerary_discovery
+
+            await run_itinerary_discovery(self, plan_id)
+            return
+        await self._discover_single(plan_id)
+
+    async def _discover_single(self, plan_id: uuid.UUID) -> None:
         token = bind_plan_id(str(plan_id))
         try:
             async with self.session_factory() as session:
@@ -270,7 +281,22 @@ class PlanningOrchestrator:
             plan.error_message = None
             await session.commit()
 
-    async def approve(self, plan_id: uuid.UUID, approved: bool) -> None:
+    async def approve(
+        self,
+        plan_id: uuid.UUID,
+        approved: bool,
+        itinerary_id: str | None = None,
+    ) -> None:
+        if await self._plan_is_itinerary(plan_id):
+            from app.agents.itinerary.runtime import resume_itinerary
+
+            action = "approve" if approved else "cancel"
+            await resume_itinerary(
+                self,
+                plan_id,
+                {"action": action, "itinerary_id": itinerary_id},
+            )
+            return
         token = bind_plan_id(str(plan_id))
         try:
             await self._approve(plan_id, approved)
@@ -398,6 +424,25 @@ class PlanningOrchestrator:
                     error_code=code,
                 )
             await session.commit()
+
+    async def revise(self, plan_id: uuid.UUID, message: str) -> None:
+        if not await self._plan_is_itinerary(plan_id):
+            raise PlanStateError("Tell me which single option to change, or start a new plan.")
+        from app.agents.itinerary.runtime import resume_itinerary
+
+        await resume_itinerary(self, plan_id, {"action": "revise", "message": message})
+
+    async def _request_is_itinerary(self, plan_id: uuid.UUID) -> bool:
+        async with self.session_factory() as session:
+            plan = await session.get(PlanningSession, plan_id)
+            if plan is None:
+                return False
+            return is_itinerary_request(_compose_request(plan))
+
+    async def _plan_is_itinerary(self, plan_id: uuid.UUID) -> bool:
+        async with self.session_factory() as session:
+            plan = await session.get(PlanningSession, plan_id)
+            return plan is not None and plan.plan_type == "itinerary"
 
     async def _deps(self, session: AsyncSession, run: AgentRun) -> PlanningDeps:
         async def load_preferences():

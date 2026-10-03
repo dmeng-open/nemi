@@ -2,7 +2,7 @@
 
 V1 keeps the V0 planning loop and replaces the demo world when credentials are configured. The same screens search Ticketmaster, search Google Places, read the person’s Google Calendar, and, after an explicit yes, create one Google event. With no keys, the app still shows demo recommendations and the local calendar.
 
-This checkout is still on the demo settings until `.env` selects a real provider. Setup is [integrations.md](../integrations.md). Restaurant reservations and ticket purchases stay out of scope.
+This checkout is still on the demo settings until `.env` selects a real provider. Setup is [integrations.md](integrations.md). Restaurant reservations and ticket purchases stay out of scope.
 
 ## What changed for the person
 

@@ -9,10 +9,12 @@ from app.schemas.plans import (
     ApproveRequest,
     ClarifyRequest,
     CreatePlanRequest,
+    ExecutionCommandRequest,
     PlanCreatedResponse,
     PlanResponse,
     PlanSummaryResponse,
     RejectRequest,
+    ReviseRequest,
     SelectRequest,
     TimelineResponse,
 )
@@ -127,7 +129,42 @@ async def approve_plan(
     orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
     session: AsyncSession = Depends(get_db),
 ) -> PlanResponse:
-    await orchestrator.approve(plan_id, body.approved)
+    await orchestrator.approve(plan_id, body.approved, body.itinerary_id)
+    session.expire_all()
+    return await build_plan_response(session, plan_id)
+
+
+@router.post("/{plan_id}/revise", response_model=PlanResponse)
+async def revise_plan(
+    plan_id: uuid.UUID,
+    body: ReviseRequest,
+    orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
+    session: AsyncSession = Depends(get_db),
+) -> PlanResponse:
+    await orchestrator.revise(plan_id, body.message)
+    session.expire_all()
+    return await build_plan_response(session, plan_id)
+
+
+@router.post("/{plan_id}/execution", response_model=PlanResponse)
+async def execution_command(
+    plan_id: uuid.UUID,
+    body: ExecutionCommandRequest,
+    orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
+    session: AsyncSession = Depends(get_db),
+) -> PlanResponse:
+    from app.agents.itinerary.compensation import apply_execution_command
+    from app.services.planning.present import get_plan_or_404
+
+    plan = await get_plan_or_404(session, plan_id)
+    await apply_execution_command(
+        session,
+        orchestrator.settings,
+        plan,
+        action=body.action,
+        confirm=body.confirm,
+    )
+    await session.commit()
     session.expire_all()
     return await build_plan_response(session, plan_id)
 

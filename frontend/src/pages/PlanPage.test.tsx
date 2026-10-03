@@ -10,9 +10,11 @@ vi.mock("@/api/plans", () => ({
   approvePlan: vi.fn(),
   clarifyPlan: vi.fn(),
   clearSelection: vi.fn(),
+  commandExecution: vi.fn(),
   continuePlan: vi.fn(),
   createPlan: vi.fn(),
   rejectCandidate: vi.fn(),
+  revisePlan: vi.fn(),
   selectCandidate: vi.fn(),
 }));
 
