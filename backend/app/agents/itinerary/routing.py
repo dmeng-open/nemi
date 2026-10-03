@@ -1,14 +1,20 @@
 import re
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.agents.itinerary.artifacts import (
     AgentTask,
+    CalendarAnalysisResult,
+    EventResearchArtifact,
     ItineraryConstraints,
+    ResearchCandidate,
+    RestaurantResearchArtifact,
     SupervisorDecision,
     TaskStatus,
     TaskType,
     dump,
 )
+from app.agents.itinerary.engine import DINNER_MINUTES, with_selected_first
 from app.services.planning.dates import budget_ceiling, resolve_named_day
 from app.services.planning.taxonomy import CUISINE_ALIASES, normalize_token
 
@@ -280,6 +286,8 @@ def interpret_revision(message: str, state: dict, *, replan_count: int, max_repl
             constraints["categories"] = [*(constraints.get("categories") or []), "live_music"]
     elif any(phrase in text for phrase in ("later", "one hour")):
         constraints["shift_minutes"] = int(constraints.get("shift_minutes") or 0) + 60
+    elif "finish earlier" in text:
+        return _finish_earlier(message, state, replan_count=replan_count)
     else:
         targets = ["restaurant", "events"]
         rejected.extend(_ids_of_type(itineraries, "restaurant"))
@@ -296,6 +304,125 @@ def interpret_revision(message: str, state: dict, *, replan_count: int, max_repl
         "replan_count": replan_count + 1,
         "revision_message": message.strip(),
     }
+
+
+def _earlier_end(start: time, end: time) -> time | None:
+    """Subtract 60 minutes, floored at start plus a 90-minute dinner."""
+
+    floor_at = datetime.combine(date.min, start) + timedelta(minutes=DINNER_MINUTES)
+    earlier = datetime.combine(date.min, end) - timedelta(minutes=60)
+    if earlier < floor_at:
+        earlier = floor_at
+    if earlier >= datetime.combine(date.min, end):
+        return None
+    return earlier.time()
+
+
+def _finish_earlier(message: str, state: dict, *, replan_count: int) -> dict:
+    original = ItineraryConstraints.model_validate(state.get("constraints") or {})
+    tightened = _earlier_end(original.time_start, original.time_end)
+    if tightened is None:
+        return {
+            "supervisor_decision": SupervisorDecision.ASK_USER.value,
+            "status": "awaiting_approval",
+            "revision_message": message.strip(),
+        }
+    updated = original.model_copy(update={"time_end": tightened})
+    rejected = list(state.get("rejected_candidate_ids") or [])
+    restaurants = _research_model(state.get("restaurant_research"), RestaurantResearchArtifact)
+    events = _research_model(state.get("event_research"), EventResearchArtifact)
+    calendar = _research_model(state.get("calendar_result"), CalendarAnalysisResult)
+    built = with_selected_first(
+        constraints=updated,
+        calendar=calendar,
+        restaurants=restaurants,
+        events=events,
+        rejected_ids=set(rejected),
+    )
+    if built:
+        return {
+            "constraints": dump(updated),
+            "itineraries": [dump(item) for item in built],
+            "rejected_candidate_ids": rejected,
+            "supervisor_decision": SupervisorDecision.ASK_USER.value,
+            "status": "awaiting_approval",
+            "replan_count": replan_count + 1,
+            "revision_message": message.strip(),
+        }
+    short = _short_branches(updated, restaurants, events, set(rejected))
+    if not short:
+        return {
+            "supervisor_decision": SupervisorDecision.ASK_USER.value,
+            "status": "awaiting_approval",
+            "revision_message": message.strip(),
+        }
+    return {
+        "constraints": dump(updated),
+        "tasks": _reopen(list(state.get("tasks") or []), short),
+        "rejected_candidate_ids": rejected,
+        "restaurant_research": None if "restaurant" in short else state.get("restaurant_research"),
+        "event_research": None if "events" in short else state.get("event_research"),
+        "supervisor_decision": SupervisorDecision.REPLAN.value,
+        "status": "replanning",
+        "replan_count": replan_count + 1,
+        "revision_message": message.strip(),
+        "restore_constraints": dump(original),
+        "restore_itineraries": list(state.get("itineraries") or []),
+    }
+
+
+def _research_model(raw: dict | None, schema: type):
+    if not raw:
+        return None
+    return schema.model_validate(raw)
+
+
+def _event_meets_hard_end(candidate: ResearchCandidate, constraints: ItineraryConstraints) -> bool:
+    event = candidate.candidate
+    if constraints.date_start is None or event.end_datetime is None:
+        return False
+    zone = ZoneInfo(constraints.timezone)
+    hard_end = datetime.combine(constraints.date_start, constraints.time_end, tzinfo=zone)
+    return event.end_datetime.astimezone(zone) <= hard_end
+
+
+def _restaurant_holds_dinner(candidate: ResearchCandidate, constraints: ItineraryConstraints) -> bool:
+    if constraints.date_start is None:
+        return False
+    zone = ZoneInfo(constraints.timezone)
+    start = datetime.combine(constraints.date_start, constraints.time_start, tzinfo=zone)
+    hard_end = datetime.combine(constraints.date_start, constraints.time_end, tzinfo=zone)
+    travel = candidate.candidate.estimated_travel_minutes or 15
+    dinner_start = start + timedelta(minutes=travel + constraints.shift_minutes)
+    dinner_end = dinner_start + timedelta(minutes=DINNER_MINUTES)
+    home = dinner_end + timedelta(minutes=travel)
+    return home <= hard_end
+
+
+def _short_branches(
+    constraints: ItineraryConstraints,
+    restaurants: RestaurantResearchArtifact | None,
+    events: EventResearchArtifact | None,
+    rejected: set[str],
+) -> list[str]:
+    short: list[str] = []
+    if constraints.wants_event:
+        usable = [
+            item
+            for item in (events.candidate_events if events else [])
+            if item.candidate.id not in rejected and _event_meets_hard_end(item, constraints)
+        ]
+        if not usable:
+            short.append("events")
+    if constraints.wants_restaurant:
+        usable = [
+            item
+            for item in (restaurants.candidate_restaurants if restaurants else [])
+            if item.candidate.id not in rejected and _restaurant_holds_dinner(item, constraints)
+        ]
+        if not usable:
+            short.append("restaurant")
+    return short
 
 
 def apply_critic_replan(state: dict, *, max_replan: int) -> dict:

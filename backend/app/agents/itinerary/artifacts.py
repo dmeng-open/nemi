@@ -92,6 +92,7 @@ class RestaurantResearchArtifact(BaseModel):
     excluded_candidates: list[dict] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     provider_failures: list[str] = Field(default_factory=list)
+    selected_id: str | None = None
 
 
 class EventResearchArtifact(BaseModel):
@@ -99,6 +100,7 @@ class EventResearchArtifact(BaseModel):
     excluded_candidates: list[dict] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     provider_failures: list[str] = Field(default_factory=list)
+    selected_id: str | None = None
 
 
 class ItineraryItem(BaseModel):

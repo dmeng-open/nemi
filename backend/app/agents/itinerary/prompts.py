@@ -1,7 +1,8 @@
-"""Versioned prompt text. Itinerary coordination does not call these yet.
+"""Versioned prompt text.
 
-The deterministic policy versions recorded on spans match these names.
-A later model call should use the same schemas as the policy outputs.
+Supervisor, restaurant research, event research, and critic constants are the
+system text for those roles. Itinerary planner and verifier constants stay
+here and are not sent. Deterministic spans keep the policy version names.
 """
 
 SUPERVISOR_PROMPT_VERSION = "supervisor_v1"

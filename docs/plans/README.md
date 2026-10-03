@@ -11,3 +11,5 @@ What shipped is in [versions](../versions/README.md).
 | [V2](v2/plan.md) | Hierarchical multi-agent planning |
 
 A learned ranker is described in [ranker](ranker/README.md). It is not built, and it is not a numbered version.
+
+Local multi-model roles are specified in [v3/plan.md](v3/plan.md). That file is the implementation handoff. It is not a numbered Nemi version. After it ships, behavior notes go in `docs/versions/multi-llm/`.

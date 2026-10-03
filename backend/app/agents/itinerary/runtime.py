@@ -6,6 +6,7 @@ from langgraph.types import Command
 
 from app.agents.itinerary.graph import ItineraryDeps, compile_itinerary_graph
 from app.agents.itinerary.persist import DbSpanLog, persist_itinerary_state
+from app.agents.itinerary.structured_output import OpenAIStructuredOutput
 from app.core.exceptions import PlanStateError
 from app.models.planning import PlanningSession
 from app.models.user import LOCAL_USER_ID
@@ -122,4 +123,5 @@ async def _deps(orchestrator, session, run) -> ItineraryDeps:
         event_provider_name=orchestrator.settings.event_provider,
         place_provider_name=orchestrator.settings.place_provider,
         session_lock=lock,
+        output=OpenAIStructuredOutput(orchestrator.settings),
     )

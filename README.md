@@ -43,7 +43,9 @@ React (Vite)  →  FastAPI  →  LangGraph
                     └─ PostgreSQL
 ```
 
-The graph is one state machine. It does not spawn other agents. Calendar conflict checks, prices, distances, dates, and sort order are ordinary code. The model classifies the request and writes the short “why this” lines. It does not reorder the ranked list.
+Two graphs share this process. A single activity or meal is one state machine. Calendar conflict checks, prices, distances, dates, and sort order are ordinary code. The model classifies that request and writes the short “why this” lines. It does not reorder the ranked list.
+
+A multi-part evening is a second graph. When `OPENAI_API_KEY` is set, the supervisor, restaurant research, event research, and critic call a model. Pairing the evening, travel estimates, and calendar writes stay in code. With no key, those four roles stay on the deterministic functions and record `model=deterministic`. See [docs/versions/multi-llm/behavior.md](docs/versions/multi-llm/behavior.md).
 
 Human waits are rows in Postgres (`awaiting_selection`, then `awaiting_approval`). A calendar write requires `approved=true`. Doing it twice uses an idempotency key and creates one event.
 

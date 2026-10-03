@@ -12,7 +12,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send, interrupt
 
-from app.agents.nodes import EventLog
 from app.agents.itinerary.artifacts import (
     CalendarAnalysisResult,
     CriticResult,
@@ -27,13 +26,13 @@ from app.agents.itinerary.artifacts import (
     dump,
 )
 from app.agents.itinerary.engine import (
-    build_itineraries,
     critique,
     dietary_status,
     limiting_message,
     parallel_speedup,
     review_semantics,
     validate_itinerary,
+    with_selected_first,
 )
 from app.agents.itinerary.failure import (
     CALENDAR_READ_FAILURE,
@@ -45,13 +44,33 @@ from app.agents.itinerary.failure import (
     SUPERVISOR_RETRY,
     active_injection,
 )
+from app.agents.itinerary.judgments import (
+    CriticJudgment,
+    ModelCallRefused,
+    StructuredStepFailed,
+    candidate_user,
+    critic_system,
+    critic_user,
+    event_system,
+    invoke_structured,
+    materialize_supervisor_tasks,
+    merge_critic,
+    restaurant_system,
+    selected_id_schema,
+    supervisor_schema,
+    supervisor_system,
+)
 from app.agents.itinerary.permissions import authorize, note_tool_call
 from app.agents.itinerary.prompts import (
     CRITIC_POLICY_VERSION,
+    CRITIC_PROMPT_VERSION,
     EVENT_POLICY_VERSION,
+    EVENT_RESEARCH_PROMPT_VERSION,
     PLANNER_POLICY_VERSION,
     RESTAURANT_POLICY_VERSION,
+    RESTAURANT_RESEARCH_PROMPT_VERSION,
     SUPERVISOR_POLICY_VERSION,
+    SUPERVISOR_PROMPT_VERSION,
     VERIFIER_POLICY_VERSION,
 )
 from app.agents.itinerary.reducers import merge_tasks
@@ -64,6 +83,12 @@ from app.agents.itinerary.routing import (
     parse_itinerary_request,
     pending_research,
 )
+from app.agents.itinerary.structured_output import (
+    OpenAIStructuredOutput,
+    StructuredCompletion,
+    StructuredOutputPort,
+)
+from app.agents.nodes import EventLog
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.exceptions import ProviderError, ScheduleConflictError
@@ -109,6 +134,10 @@ class RootPlanningState(TypedDict, total=False):
     research_wave: int
     parallel_speedup: float | None
     limiting_constraint: str | None
+    model_call_refused: bool
+    approval_hold: bool
+    restore_constraints: dict | None
+    restore_itineraries: list[dict] | None
 
 
 @dataclass
@@ -132,6 +161,13 @@ class ItineraryDeps:
     extra_restaurant_providers: list[Any] = field(default_factory=list)
     invalid_planner_attempts: int = 0
     session_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    output: StructuredOutputPort | None = None
+    llm_calls: int = 0
+    llm_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def __post_init__(self) -> None:
+        if self.output is None:
+            self.output = OpenAIStructuredOutput(self.settings)
 
 
 def _ms(started: float) -> int:
@@ -166,6 +202,12 @@ async def _trace(
     error: str | None = None,
     retry: int = 0,
     policy: str | None = None,
+    model: str = "deterministic",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    estimated_cost_usd: float | None = None,
+    metadata: dict | None = None,
+    prompt_version: str | None = None,
 ) -> dict:
     duration = _ms(started)
     deps.counters[agent] = deps.counters.get(agent, 0) + 1
@@ -177,6 +219,8 @@ async def _trace(
         duration_ms=duration,
         error_code=error,
     )
+    version = prompt_version if prompt_version is not None else policy
+    cost = 0.0 if estimated_cost_usd is None else estimated_cost_usd
     span = getattr(deps.log, "span", None)
     if span is not None:
         await span(
@@ -187,8 +231,12 @@ async def _trace(
             tools=tools,
             error_code=error,
             retry_count=retry,
-            policy_version=policy,
-            model="deterministic",
+            policy_version=version,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=cost,
+            metadata=metadata,
         )
     return {
         "agent": agent,
@@ -197,9 +245,56 @@ async def _trace(
         "detail": detail,
         "tools": tools,
         "error": error,
-        "model": "deterministic",
-        "policy_version": policy,
+        "model": model,
+        "policy_version": version,
         "retry_count": retry,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "estimated_cost_usd": cost,
+        "metadata": dict(metadata or {}),
+    }
+
+
+def _usage_fields(completion: StructuredCompletion, prompt_version: str) -> dict:
+    usage = completion.usage
+    if not usage.prompt_sent:
+        return {}
+    return {
+        "model": usage.model,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "estimated_cost_usd": usage.estimated_cost_usd,
+        "retry": usage.retry_count,
+        "metadata": dict(usage.safe_metadata),
+        "prompt_version": prompt_version,
+    }
+
+
+def _failure_fields(
+    deps: ItineraryDeps,
+    role: str,
+    prompt_version: str,
+    exc: StructuredStepFailed,
+) -> dict:
+    usage = exc.usage
+    if usage is None:
+        return {
+            "model": deps.settings.model_for(role),
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "estimated_cost_usd": 0.0,
+            "retry": max(0, exc.attempts - 1),
+            "metadata": {"tokens_unreported": True},
+            "prompt_version": prompt_version,
+        }
+    return {
+        "model": usage.model,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "estimated_cost_usd": usage.estimated_cost_usd,
+        "retry": usage.retry_count,
+        "metadata": dict(usage.safe_metadata),
+        "prompt_version": prompt_version,
     }
 
 
@@ -265,7 +360,6 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
     async def decompose(state: RootPlanningState) -> dict:
         started = time.perf_counter()
         constraints = ItineraryConstraints.model_validate(state["constraints"])
-        tasks = decompose_tasks(constraints)
         steps = int(state.get("supervisor_steps") or 0) + 1
         if constraints.wants_restaurant and constraints.wants_event:
             detail = "Understanding your plan"
@@ -273,21 +367,79 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
             detail = "Understanding your dinner plan"
         else:
             detail = "Understanding your activity plan"
-        trace = await _trace(
-            deps,
-            "supervisor",
-            "completed",
-            started,
-            detail,
-            [],
-            policy=SUPERVISOR_POLICY_VERSION,
-        )
-        return {
-            "tasks": tasks,
+        schema = supervisor_schema(constraints)
+        base = {
             "supervisor_steps": steps,
-            "supervisor_decision": "CONTINUE",
             "research_started_at": time.time(),
             "research_wave": int(state.get("research_wave") or 0),
+        }
+        try:
+            completion = await invoke_structured(
+                deps,
+                role="supervisor",
+                system=supervisor_system(),
+                user=state.get("user_request") or "",
+                schema=schema,
+                deterministic=lambda: decompose_tasks(constraints),
+                accept=lambda parsed: schema.model_validate(parsed),
+            )
+        except ModelCallRefused:
+            trace = await _trace(
+                deps,
+                "supervisor",
+                "failed",
+                started,
+                detail,
+                [],
+                error="llm_call_limit",
+                policy=SUPERVISOR_POLICY_VERSION,
+            )
+            return {
+                **base,
+                "supervisor_decision": "FAIL",
+                "model_call_refused": bool(state.get("itineraries")),
+                "trace_events": [trace],
+            }
+        except StructuredStepFailed as exc:
+            trace = await _trace(
+                deps,
+                "supervisor",
+                "failed",
+                started,
+                detail,
+                [],
+                error="structured_output_invalid",
+                policy=SUPERVISOR_POLICY_VERSION,
+                **_failure_fields(deps, "supervisor", SUPERVISOR_PROMPT_VERSION, exc),
+            )
+            return {**base, "supervisor_decision": "FAIL", "trace_events": [trace]}
+        if completion.usage.prompt_sent:
+            tasks = materialize_supervisor_tasks(schema.model_validate(completion.parsed), constraints)
+            trace = await _trace(
+                deps,
+                "supervisor",
+                "completed",
+                started,
+                detail,
+                [],
+                policy=SUPERVISOR_POLICY_VERSION,
+                **_usage_fields(completion, SUPERVISOR_PROMPT_VERSION),
+            )
+        else:
+            tasks = list(completion.parsed)  # type: ignore[arg-type]
+            trace = await _trace(
+                deps,
+                "supervisor",
+                "completed",
+                started,
+                detail,
+                [],
+                policy=SUPERVISOR_POLICY_VERSION,
+            )
+        return {
+            **base,
+            "tasks": tasks,
+            "supervisor_decision": "CONTINUE",
             "trace_events": [trace],
         }
 
@@ -354,6 +506,9 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
                 kept.append(dump(itinerary))
             else:
                 violations.extend(result.violations)
+        prior = list(state.get("itineraries") or [])
+        if not kept and prior and int(state.get("replan_count") or 0) > 0:
+            return _restore_previous_itineraries(state, prior, calendar)
         verification = VerificationResult(
             valid=bool(kept),
             violations=violations,
@@ -395,18 +550,97 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
         constraints = ItineraryConstraints.model_validate(state["constraints"])
         itineraries = [Itinerary.model_validate(item) for item in state.get("itineraries") or []]
         restaurants = _restaurant_model(state.get("restaurant_research"))
+        verification = VerificationResult.model_validate(state.get("verification") or {"valid": True})
         force = (
             active_injection(deps.settings) == CRITIC_REJECT
             and int(state.get("replan_count") or 0) == 0
         )
-        result = critique(
-            itineraries[0] if itineraries else None,
+        if force:
+            result = critique(
+                itineraries[0] if itineraries else None,
+                constraints=constraints,
+                restaurants=restaurants,
+                force_reject=True,
+            )
+            trace = await _trace(
+                deps,
+                "critic",
+                "completed",
+                started,
+                "Asking for a revision",
+                [],
+                policy=CRITIC_POLICY_VERSION,
+                retry=int(state.get("replan_count") or 0),
+            )
+            return {"critic_result": dump(result), "trace_events": [trace]}
+        if not itineraries:
+            if verification.violations:
+                result = merge_critic(CriticResult(status="PASS", issues=[]), verification, None)
+            else:
+                result = CriticResult(status="PASS", issues=[])
+            detail = "Reviewing plan quality" if result.status == "PASS" else "Asking for a revision"
+            trace = await _trace(
+                deps,
+                "critic",
+                "completed",
+                started,
+                detail,
+                [],
+                policy=CRITIC_POLICY_VERSION,
+                retry=int(state.get("replan_count") or 0),
+            )
+            return {"critic_result": dump(result), "trace_events": [trace]}
+        code = critique(
+            itineraries[0],
             constraints=constraints,
             restaurants=restaurants,
-            force_reject=force,
         )
-        if not itineraries and not force:
-            result = CriticResult(status="PASS", issues=[])
+        try:
+            completion = await invoke_structured(
+                deps,
+                role="critic",
+                system=critic_system(),
+                user=critic_user(itineraries[0], code, verification),
+                schema=CriticJudgment,
+                deterministic=lambda: code,
+                accept=lambda parsed: CriticJudgment.model_validate(parsed),
+            )
+        except ModelCallRefused:
+            trace = await _trace(
+                deps,
+                "critic",
+                "failed",
+                started,
+                "Reviewing plan quality",
+                [],
+                error="llm_call_limit",
+                policy=CRITIC_POLICY_VERSION,
+            )
+            return {
+                "critic_result": dump(code),
+                "model_call_refused": True,
+                "trace_events": [trace],
+            }
+        except StructuredStepFailed as exc:
+            result = merge_critic(code, verification, None)
+            trace = await _trace(
+                deps,
+                "critic",
+                "failed",
+                started,
+                "Asking for a revision" if result.status == "REVISE" else "Reviewing plan quality",
+                [],
+                error="structured_output_invalid",
+                policy=CRITIC_POLICY_VERSION,
+                **_failure_fields(deps, "critic", CRITIC_PROMPT_VERSION, exc),
+            )
+            return {"critic_result": dump(result), "trace_events": [trace]}
+        model = None
+        fields: dict = {"retry": int(state.get("replan_count") or 0)}
+        if completion.usage.prompt_sent:
+            model = CriticJudgment.model_validate(completion.parsed)
+            fields = _usage_fields(completion, CRITIC_PROMPT_VERSION)
+        result = merge_critic(code, verification, model)
         detail = "Reviewing plan quality" if result.status == "PASS" else "Asking for a revision"
         trace = await _trace(
             deps,
@@ -416,7 +650,7 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
             detail,
             [],
             policy=CRITIC_POLICY_VERSION,
-            retry=int(state.get("replan_count") or 0),
+            **fields,
         )
         return {"critic_result": dump(result), "trace_events": [trace]}
 
@@ -481,15 +715,21 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
                 "error_code": None,
             }
         if action == "revise":
+            message = str(decision.get("message") or "")
+            working: dict = state
+            if "finish earlier" in " ".join(message.lower().split()):
+                working = await _with_reranked_research(state, deps)
             update = interpret_revision(
-                str(decision.get("message") or ""),
-                state,
+                message,
+                working,
                 replan_count=int(state.get("replan_count") or 0),
                 max_replan=deps.settings.max_replan_attempts,
             )
             update["supervisor_steps"] = int(state.get("supervisor_steps") or 0) + 1
             update["research_started_at"] = time.time()
             update["research_wave"] = int(state.get("research_wave") or 0) + 1
+            update["approval_hold"] = False
+            update["model_call_refused"] = False
             return update
         return {"approved": False, "status": "cancelled"}
 
@@ -498,9 +738,14 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
 
     async def finalize(state: RootPlanningState) -> dict:
         status = state.get("status") or "processing"
+        limit_hit = bool(state.get("model_call_refused")) or (
+            int(state.get("supervisor_steps") or 0) >= deps.settings.max_supervisor_steps
+        )
         if status in {"processing", "replanning"}:
             if state.get("error_code") in {"location_required", "city_required"}:
                 status = "awaiting_location"
+            elif limit_hit and state.get("itineraries"):
+                status = "processing"
             elif state.get("itineraries"):
                 status = "awaiting_approval"
             else:
@@ -524,6 +769,8 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
         return "continue"
 
     def after_aggregate(state: RootPlanningState):
+        if state.get("model_call_refused") and state.get("itineraries"):
+            return "prepare_approval"
         decision = state.get("supervisor_decision")
         if decision == "RETRY_BRANCH":
             return _send_ready(state)
@@ -532,6 +779,8 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
         return "plan"
 
     def after_critic(state: RootPlanningState) -> str:
+        if state.get("model_call_refused") or state.get("approval_hold"):
+            return "prepare_approval" if state.get("itineraries") else "finalize"
         if int(state.get("supervisor_steps") or 0) >= deps.settings.max_supervisor_steps:
             return "prepare_approval" if state.get("itineraries") else "finalize"
         critic = state.get("critic_result") or {}
@@ -546,7 +795,9 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
         return "finalize"
 
     def after_replan(state: RootPlanningState):
-        over_step_cap = int(state.get("supervisor_steps") or 0) > deps.settings.max_supervisor_steps
+        if state.get("model_call_refused") or state.get("approval_hold"):
+            return "prepare_approval" if state.get("itineraries") else "finalize"
+        over_step_cap = int(state.get("supervisor_steps") or 0) >= deps.settings.max_supervisor_steps
         if state.get("supervisor_decision") != "REPLAN" or over_step_cap:
             return "prepare_approval" if state.get("itineraries") else "finalize"
         return _send_ready(state)
@@ -702,6 +953,10 @@ async def _calendar(state: dict, deps: ItineraryDeps) -> dict:
         )
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "calendar_failed")
+        if code == "tool_limit":
+            return await _tool_limit_branch(
+                state, deps, task, "calendar_analysis", started, tools, wave
+            )
         return await _failed_branch(
             deps,
             task,
@@ -743,7 +998,7 @@ async def _restaurants(state: dict, deps: ItineraryDeps) -> dict:
             "branch_reports": [{"agent": "restaurant_research", "duration_ms": trace["duration_ms"], "wave": wave}],
         }
 
-    async def work() -> RestaurantResearchArtifact:
+    async def work() -> tuple[RestaurantResearchArtifact, StructuredCompletion | None]:
         if deps.branch_delay_seconds:
             await asyncio.sleep(deps.branch_delay_seconds)
         injection = active_injection(deps.settings)
@@ -778,11 +1033,25 @@ async def _restaurants(state: dict, deps: ItineraryDeps) -> dict:
         artifact.candidate_restaurants = await _apply_rank(
             deps, artifact.candidate_restaurants, constraints, preferences, cuisine=True
         )
-        return artifact
+        selected, completion = await _choose_candidate(
+            deps,
+            artifact.candidate_restaurants,
+            system=restaurant_system(),
+        )
+        if selected is not None:
+            artifact.selected_id = selected
+        return artifact, completion
 
     try:
-        artifact = await asyncio.wait_for(work(), timeout=deps.settings.specialist_timeout_seconds)
+        artifact, completion = await asyncio.wait_for(
+            work(), timeout=deps.settings.specialist_timeout_seconds
+        )
         detail = f"Found {len(artifact.candidate_restaurants)} suitable options"
+        fields = (
+            _usage_fields(completion, RESTAURANT_RESEARCH_PROMPT_VERSION)
+            if completion is not None
+            else {}
+        )
         trace = await _trace(
             deps,
             "restaurant_research",
@@ -791,6 +1060,7 @@ async def _restaurants(state: dict, deps: ItineraryDeps) -> dict:
             detail,
             tools,
             policy=RESTAURANT_POLICY_VERSION,
+            **fields,
         )
         return {
             "restaurant_research": dump(artifact),
@@ -798,11 +1068,29 @@ async def _restaurants(state: dict, deps: ItineraryDeps) -> dict:
             "trace_events": [trace],
             "branch_reports": [{"agent": "restaurant_research", "duration_ms": trace["duration_ms"], "wave": wave}],
         }
+    except ModelCallRefused:
+        return await _refused_branch(state, deps, task, "restaurant_research", started, tools, wave)
+    except StructuredStepFailed as exc:
+        return await _failed_branch(
+            deps,
+            task,
+            "restaurant_research",
+            started,
+            tools,
+            "structured_output_invalid",
+            wave,
+            retryable=False,
+            fields=_failure_fields(deps, "research", RESTAURANT_RESEARCH_PROMPT_VERSION, exc),
+        )
     except TimeoutError:
         return await _failed_branch(
             deps, task, "restaurant_research", started, tools, "branch_timeout", wave, retryable=True
         )
     except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "code", None) == "tool_limit":
+            return await _tool_limit_branch(
+                state, deps, task, "restaurant_research", started, tools, wave
+            )
         return await _failed_branch(
             deps,
             task,
@@ -842,7 +1130,7 @@ async def _events(state: dict, deps: ItineraryDeps) -> dict:
             "branch_reports": [{"agent": "event_research", "duration_ms": trace["duration_ms"], "wave": wave}],
         }
 
-    async def work() -> EventResearchArtifact:
+    async def work() -> tuple[EventResearchArtifact, StructuredCompletion | None]:
         if deps.branch_delay_seconds:
             await asyncio.sleep(deps.branch_delay_seconds)
         injection = active_injection(deps.settings)
@@ -880,11 +1168,25 @@ async def _events(state: dict, deps: ItineraryDeps) -> dict:
         artifact.candidate_events = await _apply_rank(
             deps, artifact.candidate_events, constraints, preferences, cuisine=False
         )
-        return artifact
+        selected, completion = await _choose_candidate(
+            deps,
+            artifact.candidate_events,
+            system=event_system(),
+        )
+        if selected is not None:
+            artifact.selected_id = selected
+        return artifact, completion
 
     try:
-        artifact = await asyncio.wait_for(work(), timeout=deps.settings.specialist_timeout_seconds)
+        artifact, completion = await asyncio.wait_for(
+            work(), timeout=deps.settings.specialist_timeout_seconds
+        )
         detail = f"Found {len(artifact.candidate_events)} evening activities"
+        fields = (
+            _usage_fields(completion, EVENT_RESEARCH_PROMPT_VERSION) if completion is not None else {}
+        )
+        if "retry" not in fields:
+            fields = {"retry": int(task.get("retry_count") or 0), **fields}
         trace = await _trace(
             deps,
             "event_research",
@@ -893,7 +1195,7 @@ async def _events(state: dict, deps: ItineraryDeps) -> dict:
             detail,
             tools,
             policy=EVENT_POLICY_VERSION,
-            retry=int(task.get("retry_count") or 0),
+            **fields,
         )
         return {
             "event_research": dump(artifact),
@@ -901,11 +1203,27 @@ async def _events(state: dict, deps: ItineraryDeps) -> dict:
             "trace_events": [trace],
             "branch_reports": [{"agent": "event_research", "duration_ms": trace["duration_ms"], "wave": wave}],
         }
+    except ModelCallRefused:
+        return await _refused_branch(state, deps, task, "event_research", started, tools, wave)
+    except StructuredStepFailed as exc:
+        return await _failed_branch(
+            deps,
+            task,
+            "event_research",
+            started,
+            tools,
+            "structured_output_invalid",
+            wave,
+            retryable=False,
+            fields=_failure_fields(deps, "research", EVENT_RESEARCH_PROMPT_VERSION, exc),
+        )
     except TimeoutError:
         return await _failed_branch(
             deps, task, "event_research", started, tools, "branch_timeout", wave, retryable=True
         )
     except Exception as exc:  # noqa: BLE001
+        if getattr(exc, "code", None) == "tool_limit":
+            return await _tool_limit_branch(state, deps, task, "event_research", started, tools, wave)
         return await _failed_branch(
             deps,
             task,
@@ -938,7 +1256,7 @@ async def _plan(state: dict, deps: ItineraryDeps) -> dict:
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 continue
-        itineraries = build_itineraries(
+        itineraries = with_selected_first(
             constraints=constraints,
             calendar=_calendar_model(state.get("calendar_result")),
             restaurants=_restaurant_model(state.get("restaurant_research")),
@@ -964,8 +1282,13 @@ async def _plan(state: dict, deps: ItineraryDeps) -> dict:
         "tasks": [{**task, "status": "completed"}],
         "trace_events": [trace],
     }
-    if itineraries or not state.get("itineraries"):
+    if itineraries:
         payload["itineraries"] = [dump(item) for item in itineraries]
+        payload["restore_itineraries"] = None
+        payload["restore_constraints"] = None
+        payload["approval_hold"] = False
+    elif not state.get("itineraries"):
+        payload["itineraries"] = []
     return payload
 
 
@@ -1081,6 +1404,151 @@ async def _execute(state: dict, deps: ItineraryDeps) -> dict:
     }
 
 
+async def _choose_candidate(
+    deps: ItineraryDeps,
+    items: list[ResearchCandidate],
+    *,
+    system: str,
+) -> tuple[str | None, StructuredCompletion | None]:
+    allowed = [item.candidate.id for item in items]
+    if not allowed:
+        return None, None
+    schema = selected_id_schema(set(allowed))
+    completion = await invoke_structured(
+        deps,
+        role="research",
+        system=system,
+        user=candidate_user(items),
+        schema=schema,
+        deterministic=lambda: allowed[0],
+        accept=lambda parsed: schema.model_validate(parsed),
+    )
+    if completion.usage.prompt_sent:
+        selected = schema.model_validate(completion.parsed).selected_id
+    else:
+        selected = str(completion.parsed)
+    if selected not in set(allowed):
+        usage = completion.usage if completion.usage.prompt_sent else None
+        raise StructuredStepFailed(max(completion.usage.attempts, 1), usage)
+    return selected, completion
+
+
+async def _refused_branch(
+    state: dict,
+    deps: ItineraryDeps,
+    task: dict,
+    agent: str,
+    started: float,
+    tools: list[str],
+    wave: int,
+) -> dict:
+    trace = await _trace(
+        deps,
+        agent,
+        "failed",
+        started,
+        "Reviewing the options",
+        tools,
+        error="llm_call_limit",
+        retry=int(task.get("retry_count") or 0),
+    )
+    payload: dict = {
+        "tasks": [{**task, "status": "failed", "error": "llm_call_limit", "retryable": False}],
+        "errors": [{"agent": agent, "error": "llm_call_limit"}],
+        "trace_events": [trace],
+        "branch_reports": [{"agent": agent, "duration_ms": trace["duration_ms"], "wave": wave}],
+    }
+    if state.get("itineraries"):
+        payload["model_call_refused"] = True
+    return payload
+
+
+async def _tool_limit_branch(
+    state: dict,
+    deps: ItineraryDeps,
+    task: dict,
+    agent: str,
+    started: float,
+    tools: list[str],
+    wave: int,
+) -> dict:
+    if not state.get("itineraries"):
+        return await _failed_branch(
+            deps, task, agent, started, tools, "tool_limit", wave, retryable=False
+        )
+    trace = await _trace(
+        deps,
+        agent,
+        "failed",
+        started,
+        "This part of the research failed",
+        tools,
+        error="tool_limit",
+        retry=int(task.get("retry_count") or 0),
+    )
+    return {
+        "tasks": [{**task, "status": "failed", "error": "tool_limit", "retryable": False}],
+        "model_call_refused": True,
+        "errors": [{"agent": agent, "error": "tool_limit"}],
+        "trace_events": [trace],
+        "branch_reports": [{"agent": agent, "duration_ms": trace["duration_ms"], "wave": wave}],
+    }
+
+
+def _restore_previous_itineraries(state: dict, prior: list[dict], calendar) -> dict:
+    restored = list(state.get("restore_itineraries") or prior)
+    raw_constraints = state.get("restore_constraints") or state.get("constraints")
+    constraints = ItineraryConstraints.model_validate(raw_constraints)
+    violations = []
+    for raw in restored:
+        itinerary = Itinerary.model_validate(raw)
+        result = validate_itinerary(itinerary, constraints=constraints, calendar=calendar)
+        if not result.valid:
+            violations.extend(result.violations)
+    verification = VerificationResult(
+        valid=not violations,
+        violations=violations,
+        limiting_constraint=violations[0].message if violations else None,
+    )
+    update: dict = {
+        "itineraries": restored,
+        "verification": dump(verification),
+        "approval_hold": True,
+        "restore_itineraries": None,
+        "restore_constraints": None,
+    }
+    if state.get("restore_constraints"):
+        update["constraints"] = state["restore_constraints"]
+    return update
+
+
+async def _with_reranked_research(state: dict, deps: ItineraryDeps) -> dict:
+    constraints = ItineraryConstraints.model_validate(state["constraints"])
+    preferences = UserPreferences.model_validate(state.get("user_preferences") or {})
+    updated = dict(state)
+    restaurants = _restaurant_model(state.get("restaurant_research"))
+    events = _event_model(state.get("event_research"))
+    if restaurants is not None and restaurants.candidate_restaurants:
+        restaurants.candidate_restaurants = await _apply_rank(
+            deps,
+            restaurants.candidate_restaurants,
+            constraints,
+            preferences,
+            cuisine=True,
+        )
+        updated["restaurant_research"] = dump(restaurants)
+    if events is not None and events.candidate_events:
+        events.candidate_events = await _apply_rank(
+            deps,
+            events.candidate_events,
+            constraints,
+            preferences,
+            cuisine=False,
+        )
+        updated["event_research"] = dump(events)
+    return updated
+
+
 async def _failed_branch(
     deps: ItineraryDeps,
     task: dict,
@@ -1091,7 +1559,10 @@ async def _failed_branch(
     wave: int,
     *,
     retryable: bool,
+    fields: dict | None = None,
 ) -> dict:
+    extra = dict(fields or {})
+    retry = extra.pop("retry", int(task.get("retry_count") or 0))
     trace = await _trace(
         deps,
         agent,
@@ -1100,7 +1571,8 @@ async def _failed_branch(
         "This part of the research failed",
         tools,
         error=error,
-        retry=int(task.get("retry_count") or 0),
+        retry=retry,
+        **extra,
     )
     return {
         "tasks": [

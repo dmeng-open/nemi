@@ -2,7 +2,7 @@
 
 Nemi is a local planning agent. A single activity or meal still follows the loop below: constraints, calendar, one search, deterministic rank, then an explicit yes before one calendar event.
 
-Multi-part requests (dinner and something afterwards, a date night, afternoon and evening) use a second LangGraph. A supervisor splits the goal, calendar and research run in parallel, a planner builds whole itineraries, a deterministic constraint engine and a critic check them, and execution writes calendar events only after the graph resumes from an interrupt. That design is [multi-agent-architecture.md](versions/v2/multi-agent-architecture.md). The implementation contract is [v2/plan.md](plans/v2/plan.md). Replanning rules are [replanning.md](versions/v2/replanning.md). Writes are [execution-safety.md](versions/v2/execution-safety.md). Plans are in [plans](plans/README.md). What shipped is in [versions](versions/README.md).
+Multi-part requests (dinner and something afterwards, a date night, afternoon and evening) use a second LangGraph, `compile_itinerary_graph`. A supervisor splits the goal, calendar and research run in parallel, code builds the itineraries, a deterministic constraint engine runs, and a critic checks them. Execution writes calendar events only after that graph resumes from an interrupt. When `OPENAI_API_KEY` is set, the supervisor, both research roles, and the critic call a model. Dates, budget, the hard home-by time, ranking, pairing, and calendar writes stay in code. With no key, those roles stay deterministic. The role notes are [multi-llm/behavior.md](versions/multi-llm/behavior.md). The earlier design is [multi-agent-architecture.md](versions/v2/multi-agent-architecture.md). The implementation contract is [v2/plan.md](plans/v2/plan.md). Replanning rules are [replanning.md](versions/v2/replanning.md). Writes are [execution-safety.md](versions/v2/execution-safety.md). Plans are in [plans](plans/README.md). What shipped is in [versions](versions/README.md).
 
 Nemi V0 is the original shape of the single-activity loop. A person describes an activity or a meal, Nemi turns that into constraints, checks a local calendar, searches a provider, ranks the options with deterministic code, and waits for an explicit yes before writing a calendar event.
 
@@ -100,7 +100,11 @@ sequenceDiagram
 
 ## LangGraph workflow
 
-One state machine. Nodes do not call each other, and there is no second agent.
+Two graphs. `is_itinerary_request` is the only switch between them.
+
+A single activity or meal uses `compile_planning_graph`. Its nodes do not call each other. HTTP approve calls `schedule_approved_plan` and does not resume that graph.
+
+A multi-part evening uses `compile_itinerary_graph`. The supervisor, restaurant research, event research, and critic are the model roles. `ITINERARY_PLANNER_V1` and `VERIFIER_V1` are not sent. `PLANNER_MODEL` is not read. The evening notes are [multi-llm/behavior.md](versions/multi-llm/behavior.md).
 
 ```mermaid
 flowchart TD

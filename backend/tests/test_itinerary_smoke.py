@@ -118,3 +118,97 @@ async def test_revision_limit_stays_approvable(session_factory, settings, clock)
     async with session_factory() as session:
         finished = await build_plan_response(session, plan_id)
     assert finished.status == "scheduled", finished.error
+
+
+@pytest.mark.asyncio
+async def test_finish_earlier_does_not_rerun_both_branches(
+    session_factory, settings, clock
+) -> None:
+    from app.models.multi_agent import AgentSpan, AgentTaskRow
+    from app.services.planning.present import build_plan_response
+    from sqlalchemy import func, select
+
+    orchestrator = PlanningOrchestrator(session_factory, settings, clock=clock)
+    plan_id = await orchestrator.create_plan(DATE_NIGHT)
+    await orchestrator.run_discovery(plan_id)
+
+    async def _count(agent: str) -> int:
+        async with session_factory() as session:
+            return await session.scalar(
+                select(func.count())
+                .select_from(AgentSpan)
+                .where(AgentSpan.session_id == plan_id, AgentSpan.agent_name == agent)
+            )
+
+    restaurants = await _count("restaurant_research")
+    events = await _count("event_research")
+    await orchestrator.revise(plan_id, "Finish earlier")
+    async with session_factory() as session:
+        plan = await build_plan_response(session, plan_id)
+        tasks = list(
+            await session.scalars(select(AgentTaskRow).where(AgentTaskRow.session_id == plan_id))
+        )
+    assert plan.status == "awaiting_approval", plan.error
+    assert plan.itineraries
+    status = {row.task_key: row.status for row in tasks}
+    assert status.get("calendar") == "completed"
+    both_pending = status.get("restaurant") == "pending" and status.get("events") == "pending"
+    assert not both_pending
+    reran_restaurants = await _count("restaurant_research") > restaurants
+    reran_events = await _count("event_research") > events
+    assert not (reran_restaurants and reran_events)
+
+
+@pytest.mark.asyncio
+async def test_no_key_spans_stay_deterministic(session_factory, settings, clock) -> None:
+    from app.models.multi_agent import AgentSpan
+    from sqlalchemy import select
+
+    orchestrator = PlanningOrchestrator(session_factory, settings, clock=clock)
+    plan_id = await orchestrator.create_plan(DATE_NIGHT)
+    await orchestrator.run_discovery(plan_id)
+    async with session_factory() as session:
+        spans = list(
+            await session.scalars(select(AgentSpan).where(AgentSpan.session_id == plan_id))
+        )
+    assert spans
+    supervisor = next(span for span in spans if span.agent_name == "supervisor")
+    assert supervisor.model == "deterministic"
+    assert supervisor.prompt_version == "supervisor_policy_v1"
+    assert supervisor.input_tokens == 0
+    assert supervisor.output_tokens == 0
+    for span in spans:
+        assert span.model == "deterministic"
+        assert span.input_tokens == 0
+        assert span.output_tokens == 0
+        assert span.prompt_version != "supervisor_v1"
+        flags = span.safe_metadata or {}
+        assert "tokens_unreported" not in flags
+        assert "cost_unpriced" not in flags
+
+
+@pytest.mark.asyncio
+async def test_empty_replan_keeps_previous_itinerary_rows(session_factory, settings, clock) -> None:
+    from app.agents.itinerary.persist import _replace_itineraries
+    from app.models.multi_agent import ItineraryRecord
+    from sqlalchemy import select
+
+    orchestrator = PlanningOrchestrator(session_factory, settings, clock=clock)
+    plan_id = await orchestrator.create_plan(DATE_NIGHT)
+    await orchestrator.run_discovery(plan_id)
+    async with session_factory() as session:
+        before = list(
+            await session.scalars(
+                select(ItineraryRecord).where(ItineraryRecord.session_id == plan_id)
+            )
+        )
+        keys = [row.itinerary_key for row in before]
+        assert keys
+        await _replace_itineraries(session, plan_id, [], None)
+        await session.commit()
+        after = list(
+            await session.scalars(
+                select(ItineraryRecord).where(ItineraryRecord.session_id == plan_id)
+            )
+        )
+    assert [row.itinerary_key for row in after] == keys

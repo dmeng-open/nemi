@@ -55,18 +55,30 @@ async def apply_execution_command(
         raise PlanStateError("That execution action is not available.")
     if plan.status not in {"partial_success", "failed"}:
         raise PlanStateError("Nothing left to retry.")
-    authorize("execution", "google_calendar.create_event")
+    rows = await _actions(session, plan.id)
+    if not rows:
+        raise PlanStateError("This plan has no calendar write to retry.")
     record = await _selected_itinerary(session, plan.id)
     if record is None:
         raise PlanStateError("This plan has no itinerary to schedule.")
+    authorize("execution", "google_calendar.create_event")
     itinerary = Itinerary.model_validate(record.payload)
     calendar = build_calendar_provider(settings, session, LOCAL_USER_ID)
     any_failed = False
     any_ok = False
+    considered = False
     for item in itinerary.items:
         if item.item_type not in {"restaurant", "event"}:
             continue
         item_id = f"{itinerary.itinerary_id}:{item.item_type}:{item.source_candidate_id}"
+        idempotency_key = make_idempotency_key(str(plan.id), item_id, "create_event")
+        existing = _action_for_item(rows, item_id, idempotency_key)
+        if existing is None:
+            continue
+        considered = True
+        if existing.status == "completed":
+            any_ok = True
+            continue
         try:
             result = await schedule_block(
                 calendar,
@@ -103,6 +115,8 @@ async def apply_execution_command(
             None,
         )
         any_ok = True
+    if not considered:
+        return
     if any_ok and not any_failed:
         plan.status = "scheduled"
         plan.approved = True
@@ -120,19 +134,23 @@ async def apply_execution_command(
 
 
 async def _selected_itinerary(session: AsyncSession, plan_id: uuid.UUID) -> ItineraryRecord | None:
-    selected = await session.scalar(
+    return await session.scalar(
         select(ItineraryRecord).where(
             ItineraryRecord.session_id == plan_id,
             ItineraryRecord.selected.is_(True),
         )
     )
-    if selected is not None:
-        return selected
-    return await session.scalar(
-        select(ItineraryRecord)
-        .where(ItineraryRecord.session_id == plan_id)
-        .order_by(ItineraryRecord.rank_position)
-    )
+
+
+def _action_for_item(
+    rows: list[ExecutionAction],
+    item_id: str,
+    idempotency_key: str,
+) -> ExecutionAction | None:
+    matched = next((row for row in rows if row.idempotency_key == idempotency_key), None)
+    if matched is not None:
+        return matched
+    return next((row for row in rows if row.item_key == item_id), None)
 
 
 async def _actions(session: AsyncSession, plan_id: uuid.UUID) -> list[ExecutionAction]:

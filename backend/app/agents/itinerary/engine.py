@@ -157,6 +157,101 @@ def build_itineraries(
     return _diverse(drafts, limit)
 
 
+def with_selected_first(
+    *,
+    constraints: ItineraryConstraints,
+    calendar: CalendarAnalysisResult | None,
+    restaurants: RestaurantResearchArtifact | None,
+    events: EventResearchArtifact | None,
+    rejected_ids: set[str],
+    limit: int = 3,
+) -> list[Itinerary]:
+    """Put a placeable selected dinner and/or activity first.
+
+    The remaining cards are the ranker order passed through ``_diverse``.
+    This does not drop other candidates and does not change ``selected_id``.
+    """
+
+    ranked = build_itineraries(
+        constraints=constraints,
+        calendar=calendar,
+        restaurants=restaurants,
+        events=events,
+        rejected_ids=rejected_ids,
+        limit=limit,
+    )
+    lead = _place_selected(
+        constraints=constraints,
+        calendar=calendar,
+        restaurants=restaurants,
+        events=events,
+        rejected_ids=rejected_ids,
+    )
+    if lead is None:
+        return ranked
+    rest = [item for item in ranked if item.itinerary_id != lead.itinerary_id]
+    return [lead, *rest]
+
+
+def _selected_member(
+    items: list[ResearchCandidate],
+    selected_id: str | None,
+    rejected_ids: set[str],
+    *,
+    drop_excluded_diet: bool,
+) -> ResearchCandidate | None:
+    if not selected_id or selected_id in rejected_ids:
+        return None
+    for item in items:
+        if item.candidate.id != selected_id:
+            continue
+        if drop_excluded_diet and item.dietary == "exclude":
+            return None
+        return item
+    return None
+
+
+def _place_selected(
+    *,
+    constraints: ItineraryConstraints,
+    calendar: CalendarAnalysisResult | None,
+    restaurants: RestaurantResearchArtifact | None,
+    events: EventResearchArtifact | None,
+    rejected_ids: set[str],
+) -> Itinerary | None:
+    zone = ZoneInfo(constraints.timezone)
+    windows = _windows(calendar, constraints, zone)
+    busy = _busy(calendar)
+    calendar_read = calendar.calendar_read if calendar else "unavailable"
+    meal = _selected_member(
+        restaurants.candidate_restaurants if restaurants else [],
+        restaurants.selected_id if restaurants else None,
+        rejected_ids,
+        drop_excluded_diet=True,
+    )
+    activity = _selected_member(
+        events.candidate_events if events else [],
+        events.selected_id if events else None,
+        rejected_ids,
+        drop_excluded_diet=False,
+    )
+    shared = {
+        "constraints": constraints,
+        "windows": windows,
+        "busy": busy,
+        "calendar_read": calendar_read,
+        "zone": zone,
+    }
+    placed: Itinerary | None = None
+    if constraints.wants_restaurant and constraints.wants_event and meal and activity:
+        placed = _pair(meal, activity, **shared)
+    if placed is None and constraints.wants_restaurant and meal is not None:
+        placed = _meal_only(meal, partial_event=constraints.wants_event, **shared)
+    if placed is None and constraints.wants_event and activity is not None:
+        placed = _event_only(activity, **shared)
+    return placed
+
+
 def validate_itinerary(
     itinerary: Itinerary,
     *,

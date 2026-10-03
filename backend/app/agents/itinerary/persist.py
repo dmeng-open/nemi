@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.nodes import EventLog
 from app.agents.itinerary.engine import estimate_cost_usd
+from app.agents.nodes import EventLog
 from app.core.messages import SAFE_MESSAGES
 from app.models.agent import AgentRun, AgentRunEvent
 from app.models.multi_agent import (
@@ -72,7 +72,17 @@ class DbSpanLog(EventLog):
         retry_count: int,
         policy_version: str | None,
         model: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        estimated_cost_usd: float | None = None,
+        metadata: dict | None = None,
     ) -> None:
+        safe = {"detail": detail}
+        if metadata:
+            for key, value in metadata.items():
+                if key != "detail":
+                    safe[key] = value
+        cost = estimate_cost_usd(0, 0) if estimated_cost_usd is None else estimated_cost_usd
         async with self._lock:
             self.session.add(
                 AgentSpan(
@@ -84,13 +94,13 @@ class DbSpanLog(EventLog):
                     duration_ms=duration_ms,
                     model=model,
                     prompt_version=policy_version,
-                    input_tokens=0,
-                    output_tokens=0,
-                    estimated_cost_usd=estimate_cost_usd(0, 0),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    estimated_cost_usd=cost,
                     tool_calls=tools,
                     retry_count=retry_count,
                     error_code=error_code,
-                    safe_metadata={"detail": detail},
+                    safe_metadata=safe,
                 )
             )
             await self.session.commit()
@@ -203,6 +213,8 @@ async def _replace_itineraries(
             await session.scalars(select(ItineraryRecord).where(ItineraryRecord.session_id == session_id))
         ).all()
     )
+    if existing and not itineraries:
+        return
     if existing:
         ids = [row.id for row in existing]
         await session.execute(delete(ItineraryItemRecord).where(ItineraryItemRecord.itinerary_id.in_(ids)))
