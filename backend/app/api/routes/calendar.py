@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.exceptions import AppError, PlanNotFound
 from app.integrations.calendar.local import row_to_event
 from app.models.user import LOCAL_USER_ID
+from app.providers.factory import build_calendar_provider
 from app.repositories.calendar import CalendarRepository
 from app.repositories.users import ensure_local_user
 from app.schemas.calendar import CalendarEventResponse, CreateCalendarEventRequest
@@ -29,6 +30,42 @@ def _response(row) -> CalendarEventResponse:
         description=event.description,
         source_url=event.source_url,
     )
+
+
+@router.get("/window", response_model=list[CalendarEventResponse])
+async def calendar_window(
+    start: datetime,
+    end: datetime,
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[CalendarEventResponse]:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise AppError(
+            "Include a timezone on the start and end times.",
+            code="validation_error",
+            status_code=422,
+        )
+    if end <= start:
+        raise AppError(
+            "end must be after start",
+            code="validation_error",
+            status_code=422,
+        )
+    await ensure_local_user(session)
+    provider = build_calendar_provider(settings, session, LOCAL_USER_ID)
+    events = await provider.get_events(start, end)
+    return [
+        CalendarEventResponse(
+            id=event.id,
+            title=event.title,
+            start=event.start,
+            end=event.end,
+            location=event.location,
+            description=event.description,
+            source_url=event.source_url,
+        )
+        for event in events
+    ]
 
 
 @router.get("/events", response_model=list[CalendarEventResponse])

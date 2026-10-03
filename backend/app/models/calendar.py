@@ -49,6 +49,7 @@ class CalendarAction(Base):
         ForeignKey("local_calendar_events.id", ondelete="SET NULL"),
         default=None,
     )
+    external_event_id: Mapped[str | None] = mapped_column(String(128), default=None)
     error_code: Mapped[str | None] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

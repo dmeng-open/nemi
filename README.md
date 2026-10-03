@@ -2,7 +2,7 @@
 
 Nemi is a personal planning agent. You describe an afternoon or a meal. Nemi turns that into constraints, checks a local calendar, searches activities or restaurants, ranks the options, and waits for an explicit yes before it writes anything down.
 
-V0 is a local product. OpenAI does the language work. Events, restaurants, and the calendar are local providers, so the loop runs without Ticketmaster, Google Places, or Google Calendar credentials.
+The default local product uses OpenAI for language and mock providers for events, restaurants, and the calendar, so the loop runs without Ticketmaster, Google Places, or Google Calendar credentials. Those providers can be turned on with environment variables. Setup is in [docs/integrations.md](docs/integrations.md). The V1 contract is [docs/plans/v1-plan.md](docs/plans/v1-plan.md). User flows for each version are in [docs/user-flows](docs/user-flows/README.md).
 
 ## Product vision
 
@@ -30,7 +30,7 @@ Capture these locally after `npm run dev` and the API are running:
 
 ## Architecture
 
-Details, diagrams, and the decisions that should stay put live in [docs/architecture.md](docs/architecture.md). The phase checklist is [docs/plans/v0-plan.md](docs/plans/v0-plan.md).
+Details, diagrams, and the decisions that should stay put live in [docs/architecture.md](docs/architecture.md). What a person does in each version is in [docs/user-flows](docs/user-flows/README.md). The V0 phase checklist is [docs/plans/v0-plan.md](docs/plans/v0-plan.md). V1 continues in [docs/plans/v1-plan.md](docs/plans/v1-plan.md).
 
 ```text
 React (Vite)  →  FastAPI  →  LangGraph
@@ -141,17 +141,18 @@ OpenAI, the graph, the API, the database, and the UI are real. The catalogs are 
 
 ## Provider architecture
 
-`EVENT_PROVIDER`, `PLACE_PROVIDER`, and `CALENDAR_PROVIDER` choose the implementation. `mock` and `local` are implemented. `ticketmaster`, `google` (places), and `google` (calendar) are registered and fail with a clear unavailable error. They do not call those APIs.
+`EVENT_PROVIDER`, `PLACE_PROVIDER`, and `CALENDAR_PROVIDER` choose the implementation. `mock` and `local` do not need API keys. `ticketmaster`, `google` places, and `google` calendar call those services when selected. A missing key or a disconnected Google Calendar does not fall back to demo results.
 
-`CandidateRanker` is implemented by `HeuristicRanker`. A later model ranker can replace it without changing the graph. Weights default to preference 0.35, schedule 0.25, distance 0.15, price 0.10, quality 0.15, and must sum to 1.
+`CandidateRanker` is the protocol. `HeuristicRanker` is the only implementation. Weights default to preference 0.35, schedule 0.25, distance 0.15, price 0.10, quality 0.15, and must sum to 1.
 
 ## Current limitations
 
 - No accounts. Every row belongs to the seeded local user.
-- No live events, places, or Google Calendar. Export is an `.ics` file.
+- Live events, places, and Google Calendar are optional. The defaults stay mock and local. Export is still an `.ics` file.
+- Google refresh tokens are stored in Postgres as plaintext behind `OAuthConnectionRepository`. That is a local V1 choice, not production encryption.
 - No ticket purchase and no restaurant reservation.
 - “Around $50” becomes a ceiling of 1.2× that amount. “Under $50” stays at 50.
-- Dates are interpreted in `APP_TIMEZONE` (default `America/Chicago`).
+- Dates use the preference timezone when one is saved, otherwise `APP_TIMEZONE` (default `America/Chicago`).
 - The discovery run is in-process. Poll `GET /api/plans/{id}` while it works.
 - Chain-of-thought is not stored or shown. The timeline is operational events only.
 
@@ -159,7 +160,7 @@ OpenAI, the graph, the API, the database, and the UI are real. The catalogs are 
 
 Documented only. Not built.
 
-**V1.** Ticketmaster, Google Places, and Google Calendar OAuth behind the existing provider interfaces.
+**V1.** Ticketmaster, Google Places, and Google Calendar behind the existing provider interfaces. See [docs/v1-plan.md](docs/v1-plan.md) and [docs/integrations.md](docs/integrations.md).
 
 **V2.** Train on `recommendation_candidates` and `interaction_events`. Keep the heuristic as the baseline and add another `CandidateRanker`. Measure Recall@K and NDCG@K before treating a model as the ranker.
 

@@ -26,4 +26,12 @@ def ranking_context(state: dict, zone_key: str) -> RankingContext:
         preferred_time_start=constraints.time_start,
         preferred_time_end=constraints.time_end,
         timezone=zone_key,
+        calendar_read=_calendar_read(state),
     )
+
+
+def _calendar_read(state: dict) -> str:
+    value = state.get("calendar_read")
+    if value == "unavailable":
+        return "unavailable"
+    return "ok"

@@ -13,6 +13,8 @@ def timeline_label(event_type: str, metadata: dict | None) -> str:
     if event_type == "preferences_loaded":
         return "Loaded your preferences"
     if event_type == "calendar_loaded":
+        if meta.get("calendar_read") == "unavailable":
+            return "Calendar could not be checked"
         return "Checked your schedule"
     if event_type == "search_started":
         return "Searching restaurants" if kind == "restaurants" else "Searching activities"
@@ -24,6 +26,8 @@ def timeline_label(event_type: str, metadata: dict | None) -> str:
     if event_type == "candidates_ranked":
         return "Compared the best fits"
     if event_type == "constraints_verified":
+        if meta.get("calendar_read") == "unavailable":
+            return "Schedule conflicts were not checked"
         removed = int(meta.get("conflicts_removed") or 0)
         if removed == 1:
             return "Removed 1 conflict"

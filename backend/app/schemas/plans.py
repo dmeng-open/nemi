@@ -16,6 +16,10 @@ class SelectRequest(BaseModel):
     candidate_id: str = Field(min_length=1, max_length=160)
 
 
+class RejectRequest(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=160)
+
+
 class ApproveRequest(BaseModel):
     approved: bool
 
@@ -55,6 +59,9 @@ class CandidateResponse(BaseModel):
     components: ScoreComponentsResponse
     schedule_compatible: bool
     explanation: str
+    calendar_checked: bool = True
+    travel_time_is_estimate: bool = False
+    listed_time_missing: bool = False
 
 
 class TimelineItemResponse(BaseModel):
@@ -78,6 +85,10 @@ class PlanErrorResponse(BaseModel):
     message: str
 
 
+class PlanCalendarResponse(BaseModel):
+    ics_available: bool
+
+
 class PlanResponse(BaseModel):
     plan_id: str
     status: str
@@ -89,6 +100,7 @@ class PlanResponse(BaseModel):
     selected_candidate_id: str | None
     execution: ExecutionResponse | None
     error: PlanErrorResponse | None
+    calendar: PlanCalendarResponse
     timeline: list[TimelineItemResponse]
     created_at: datetime
     updated_at: datetime

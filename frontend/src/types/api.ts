@@ -1,6 +1,7 @@
 export type PlanStatus =
   | "processing"
   | "awaiting_clarification"
+  | "awaiting_location"
   | "awaiting_selection"
   | "awaiting_approval"
   | "scheduled"
@@ -38,6 +39,9 @@ export type Candidate = {
   components: ScoreComponents;
   schedule_compatible: boolean;
   explanation: string;
+  calendar_checked: boolean;
+  travel_time_is_estimate: boolean;
+  listed_time_missing?: boolean;
 };
 
 export type TimelineItem = {
@@ -72,6 +76,7 @@ export type Plan = {
   selected_candidate_id: string | null;
   execution: Execution | null;
   error: PlanError | null;
+  calendar: { ics_available: boolean };
   timeline: TimelineItem[];
   created_at: string;
   updated_at: string;
@@ -101,6 +106,11 @@ export type Preferences = {
   max_travel_minutes: number | null;
   preferred_days: string[];
   preferred_time_ranges: TimeRange[];
+  home_city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  default_radius_km: number | null;
+  timezone: string | null;
 };
 
 export type CalendarEvent = {
@@ -113,12 +123,23 @@ export type CalendarEvent = {
   source_url: string | null;
 };
 
+export type ProviderConnection =
+  | "mock"
+  | "local"
+  | "not_configured"
+  | "configured"
+  | "oauth_required"
+  | "connected"
+  | "unhealthy";
+
 export type ProviderStatus = {
   key: string;
   label: string;
   mode: string;
   status: "ready" | "unavailable";
+  connection: ProviderConnection;
   detail: string;
+  account_email: string | null;
 };
 
 export type Integrations = {

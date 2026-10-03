@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,14 +24,17 @@ class Settings(BaseSettings):
     place_provider: Literal["mock", "google"] = "mock"
     calendar_provider: Literal["local", "google"] = "local"
     app_timezone: str = "America/Chicago"
+    app_base_url: str = "http://localhost:5173"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     log_level: str = "INFO"
+    discovery_cache_ttl_seconds: int = 600
+    integrations_health_ttl_seconds: int = 300
 
     ticketmaster_api_key: SecretStr = SecretStr("")
     google_places_api_key: SecretStr = SecretStr("")
     google_client_id: SecretStr = SecretStr("")
     google_client_secret: SecretStr = SecretStr("")
-    google_redirect_uri: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/integrations/google/calendar/callback"
 
     rank_weight_preference: float = 0.35
     rank_weight_schedule: float = 0.25
@@ -50,6 +54,16 @@ class Settings(BaseSettings):
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"Unknown timezone: {value}") from exc
         return value
+
+    @field_validator("app_base_url")
+    @classmethod
+    def base_url_must_be_absolute(cls, value: str) -> str:
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("APP_BASE_URL must be an absolute http(s) URL")
+        if parsed.username or parsed.password:
+            raise ValueError("APP_BASE_URL must not include credentials")
+        return value.strip().rstrip("/")
 
     @property
     def cors_origin_list(self) -> list[str]:

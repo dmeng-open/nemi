@@ -53,7 +53,34 @@ export function formatRange(
   return `${formatClock(start, timeZone)} – ${formatClock(end, timeZone)}`;
 }
 
-export function formatPrice(price: number | null, priceLevel: number | null) {
+const PLACE_PRICE_BANDS: Record<number, number> = {
+  0: 0,
+  1: 15,
+  2: 35,
+  3: 70,
+  4: 120,
+};
+
+function isRankingBand(
+  price: number | null,
+  priceLevel: number | null,
+  travelTimeIsEstimate: boolean,
+) {
+  if (priceLevel == null) return false;
+  if (travelTimeIsEstimate || price == null) return true;
+  return PLACE_PRICE_BANDS[priceLevel] === price;
+}
+
+export function formatPrice(
+  price: number | null,
+  priceLevel: number | null,
+  travelTimeIsEstimate = false,
+) {
+  if (isRankingBand(price, priceLevel, travelTimeIsEstimate)) {
+    if (priceLevel === 0 || price === 0) return "Free";
+    if (priceLevel) return "$".repeat(priceLevel);
+    return "Price varies";
+  }
   if (price === 0) return "Free";
   const dollars = price == null ? null : `$${Math.round(price)}`;
   const level = priceLevel ? "$".repeat(priceLevel) : null;

@@ -13,6 +13,10 @@ class EventSearchQuery(BaseModel):
     budget_max: float | None = None
     max_travel_minutes: int | None = None
     limit: int = 40
+    city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    radius_km: float | None = None
 
 
 class EventCandidate(BaseModel):
@@ -24,14 +28,20 @@ class EventCandidate(BaseModel):
     end: datetime
     venue: str
     address: str
-    latitude: float
-    longitude: float
-    distance_km: float
-    travel_minutes: int
-    price: float
-    rating: float
-    url: str
-    image_url: str
+    latitude: float | None = None
+    longitude: float | None = None
+    distance_km: float | None = None
+    travel_minutes: int | None = None
+    price: float | None = None
+    rating: float | None = None
+    url: str | None = None
+    image_url: str | None = None
+    source: str = "mock_events"
+    provider: str = "mock"
+    external_id: str | None = None
+    retrieved_at: datetime | None = None
+    travel_time_is_estimate: bool = False
+    listed_time_missing: bool = False
 
     def to_candidate(self) -> Candidate:
         return Candidate(
@@ -51,7 +61,13 @@ class EventCandidate(BaseModel):
             price_min=self.price,
             price_max=self.price,
             rating=self.rating,
-            source="mock_events",
+            source=self.source,
             source_url=self.url,
             image_url=self.image_url,
+            provider=self.provider,
+            external_id=self.external_id or self.id,
+            retrieved_at=self.retrieved_at,
+            travel_time_is_estimate=self.travel_time_is_estimate,
+            calendar_checked=not self.listed_time_missing,
+            listed_time_missing=self.listed_time_missing,
         )

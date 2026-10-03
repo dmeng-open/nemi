@@ -1,4 +1,5 @@
 from datetime import time
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -40,6 +41,7 @@ class RankingContext(BaseModel):
     preferred_time_start: time | None = None
     preferred_time_end: time | None = None
     timezone: str = "America/Chicago"
+    calendar_read: Literal["ok", "unavailable"] = "ok"
 
 
 class RankedCandidate(BaseModel):
@@ -51,3 +53,11 @@ class RankedCandidate(BaseModel):
     explanation: str | None = None
     shown: bool = False
     rank_position: int = 0
+
+
+class CandidateRanker(Protocol):
+    async def rank(
+        self,
+        candidates: list[Candidate],
+        context: RankingContext,
+    ) -> list[RankedCandidate]: ...

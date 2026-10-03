@@ -35,6 +35,11 @@ async def update_preferences(
         {"start": item.start.isoformat(), "end": item.end.isoformat(), "label": item.label}
         for item in body.preferred_time_ranges
     ]
+    row.home_city = body.home_city
+    row.latitude = body.latitude
+    row.longitude = body.longitude
+    row.default_radius_km = body.default_radius_km
+    row.timezone = body.timezone
     session.add(
         InteractionEvent(
             user_id=LOCAL_USER_ID,

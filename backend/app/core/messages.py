@@ -1,3 +1,13 @@
+TICKETMASTER_NOT_CONFIGURED = (
+    "Ticketmaster is selected but no API key is configured. Demo results were not substituted."
+)
+TICKETMASTER_FAILED = "Ticketmaster could not be reached. Demo results were not substituted."
+PLACES_NOT_CONFIGURED = (
+    "Google Places is selected but no API key is configured. Demo results were not substituted."
+)
+PLACES_FAILED = "Google Places could not be reached. Demo results were not substituted."
+CALENDAR_NOT_CONFIGURED = "Google Calendar is selected but no OAuth client is configured."
+
 SAFE_MESSAGES = {
     "parse_failed": "Could not understand that request. Try adding a day and whether you want an activity or a meal.",
     "date_unclear": "Could not understand the requested date.",
@@ -10,5 +20,11 @@ SAFE_MESSAGES = {
     "openai_unconfigured": "Add your OpenAI API key to plan with Nemi.",
     "provider_failed": "The search failed. You can try again.",
     "provider_unavailable": "That provider is not available in this local setup.",
+    "provider_not_configured": "That provider is not configured.",
     "approval_required": "Approve the plan before it is added to your schedule.",
+    "city_required": "Add a home city in Preferences, then continue this plan. Event search needs a city.",
+    "location_required": "Add latitude and longitude in Preferences, then continue this plan. Restaurant search needs coordinates.",
+    "calendar_not_connected": "Connect Google Calendar to add this plan.",
+    "calendar_read_failed": "Nemi could not re-check your calendar, so this was not added. Download the .ics file to add it yourself.",
+    "calendar_write_unconfirmed": "Nemi could not confirm the calendar event. Download the .ics file to add it yourself.",
 }

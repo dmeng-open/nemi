@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { AgentTimeline } from "@/features/planning/AgentTimeline";
@@ -12,20 +13,28 @@ export function PlanWorkspace({
   plan,
   timeZone,
   busy = false,
+  demoMode = false,
   onClarify,
   onChoose,
+  onReject,
   onCancel,
   onApprove,
+  onContinue,
+  onConnect,
   onRetry,
   onAnother,
 }: {
   plan: Plan;
   timeZone: string;
   busy?: boolean;
+  demoMode?: boolean;
   onClarify: (message: string) => void;
   onChoose: (candidate: Candidate) => void;
+  onReject?: (candidate: Candidate) => void;
   onCancel: () => void;
   onApprove: () => void;
+  onContinue?: () => void;
+  onConnect?: () => void;
   onRetry: () => void;
   onAnother: () => void;
 }) {
@@ -34,7 +43,16 @@ export function PlanWorkspace({
     plan.recommendations.find((item) => item.id === plan.selected_candidate_id) ?? null;
   const reduceMotion = useReducedMotion();
   const working = plan.status === "processing";
-  const showCards = plan.status === "awaiting_selection" || (plan.status === "no_matches" && plan.recommendations.length > 0);
+  const disconnected =
+    plan.status === "awaiting_approval" && plan.error?.code === "calendar_not_connected";
+  const showCards =
+    plan.status === "awaiting_selection" ||
+    (plan.status === "no_matches" && plan.recommendations.length > 0) ||
+    disconnected;
+  const icsHref =
+    plan.calendar?.ics_available && plan.status === "awaiting_approval"
+      ? `/api/plans/${plan.plan_id}/ics`
+      : null;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
@@ -76,14 +94,38 @@ export function PlanWorkspace({
           </form>
         ) : null}
 
+        {plan.status === "awaiting_location" ? (
+          <section className="rounded-3xl border border-line bg-surface p-6" aria-labelledby="location-needed">
+            <h2 id="location-needed" className="font-serif text-3xl">
+              Location needed
+            </h2>
+            <p className="mt-3 text-sm leading-6">
+              {plan.error?.message ?? "Save a location in Preferences, then continue this plan."}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                className="inline-flex h-11 items-center rounded-full border border-line px-5 text-sm"
+                to="/preferences"
+              >
+                Preferences
+              </Link>
+              <Button type="button" onClick={onContinue} disabled={busy || !onContinue}>
+                Continue this plan
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
         {plan.status === "awaiting_approval" && selected ? (
           <Confirmation
             candidate={selected}
             timeZone={timeZone}
             error={plan.error?.message}
             pending={busy}
+            icsHref={icsHref}
             onCancel={onCancel}
             onApprove={onApprove}
+            onConnect={disconnected ? onConnect : undefined}
           />
         ) : null}
 
@@ -109,8 +151,12 @@ export function PlanWorkspace({
           </div>
         ) : null}
 
+        {demoMode && showCards ? (
+          <p className="text-sm text-muted">Showing demo recommendations.</p>
+        ) : null}
+
         {showCards ? (
-          <div className="grid gap-4">
+          <div id="recommendation-list" tabIndex={-1} className="grid gap-4 outline-none">
             {plan.recommendations.map((candidate) => (
               <CandidateCard
                 key={candidate.id}
@@ -118,6 +164,7 @@ export function PlanWorkspace({
                 timeZone={timeZone}
                 pending={busy}
                 onChoose={onChoose}
+                onReject={plan.status === "awaiting_selection" ? onReject : undefined}
               />
             ))}
           </div>

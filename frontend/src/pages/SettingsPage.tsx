@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
 import { getIntegrations } from "@/api/integrations";
 import { useTheme, type ThemeChoice } from "@/hooks/useTheme";
@@ -35,8 +36,11 @@ export function SettingsPage() {
       <section className="mt-8">
         <h2 className="text-sm font-medium">Timezone</h2>
         <p className="mt-2 text-sm text-muted">
-          “Saturday” and “after work” are read in {integrations.data?.timezone ?? "the configured timezone"}. Change
-          APP_TIMEZONE to match where you are.
+          “Saturday” and “after work” use the timezone in{" "}
+          <Link className="underline" to="/preferences">
+            Preferences
+          </Link>
+          . The server fallback is {integrations.data?.timezone ?? "America/Chicago"}.
         </p>
       </section>
     </div>

@@ -11,6 +11,7 @@ class PlanningState(TypedDict, total=False):
     user_preferences: dict[str, Any] | None
     calendar_events: list[dict[str, Any]]
     free_windows: list[dict[str, Any]]
+    calendar_read: str
     candidates: list[dict[str, Any]]
     ranked_candidates: list[dict[str, Any]]
     selected_candidate_id: str | None

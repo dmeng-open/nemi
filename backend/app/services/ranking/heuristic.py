@@ -56,17 +56,26 @@ def price_score(price: float | None, budget: float | None) -> float:
     return clamp(1 - 0.25 * (price / budget))
 
 
-def quality_score(rating: float | None) -> float:
+def quality_score(rating: float | None, review_count: int | None = None) -> float:
     if rating is None:
         return 0.5
-    return clamp(rating / 5)
+    if review_count is None or review_count < 0:
+        return clamp(rating / 5)
+    adjusted = (rating * review_count + 3.5 * 20) / (review_count + 20)
+    return clamp(adjusted / 5)
 
 
 def schedule_parts(
     candidate: Candidate,
     busy: list[CalendarEvent],
     windows: list[TimeWindow],
+    *,
+    calendar_read: str = "ok",
 ) -> tuple[float, bool]:
+    if calendar_read != "ok":
+        return 0.5, True
+    if candidate.listed_time_missing:
+        return 0.5, True
     start = candidate.start_datetime
     end = candidate.end_datetime
     if start is None or end is None or end <= start:
@@ -85,7 +94,12 @@ def score_components(candidate: Candidate, context: RankingContext) -> tuple[Sco
         else context.requested_categories
     )
     # Restaurants are matched on cuisines, which the caller puts in requested_categories.
-    schedule, compatible = schedule_parts(candidate, context.busy_events, context.free_windows)
+    schedule, compatible = schedule_parts(
+        candidate,
+        context.busy_events,
+        context.free_windows,
+        calendar_read=context.calendar_read,
+    )
     components = ScoreComponents(
         preference=round(
             preference_score(
@@ -101,7 +115,7 @@ def score_components(candidate: Candidate, context: RankingContext) -> tuple[Sco
             distance_score(candidate.estimated_travel_minutes, context.max_travel_minutes), 4
         ),
         price=round(price_score(candidate.price_min, context.budget_max), 4),
-        quality=round(quality_score(candidate.rating), 4),
+        quality=round(quality_score(candidate.rating, candidate.review_count), 4),
     )
     return components, compatible
 
