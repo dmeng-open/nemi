@@ -3,9 +3,11 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { AgentBoard } from "@/features/planning/AgentBoard";
 import { AgentTimeline } from "@/features/planning/AgentTimeline";
 import { CandidateCard } from "@/features/planning/CandidateCard";
 import { Confirmation, SuccessState } from "@/features/planning/Confirmation";
+import { ItineraryPlans } from "@/features/planning/ItineraryPlans";
 import { formatDay, formatRange } from "@/lib/format";
 import type { Candidate, Plan } from "@/types/api";
 
@@ -19,10 +21,15 @@ export function PlanWorkspace({
   onReject,
   onCancel,
   onApprove,
+  onApproveItinerary,
   onContinue,
   onConnect,
   onRetry,
   onAnother,
+  onRevise,
+  onRetryExecution,
+  onKeepPartial,
+  onCancelCreated,
 }: {
   plan: Plan;
   timeZone: string;
@@ -33,10 +40,15 @@ export function PlanWorkspace({
   onReject?: (candidate: Candidate) => void;
   onCancel: () => void;
   onApprove: () => void;
+  onApproveItinerary?: (itineraryId: string) => void;
   onContinue?: () => void;
   onConnect?: () => void;
   onRetry: () => void;
   onAnother: () => void;
+  onRevise?: (message: string) => void;
+  onRetryExecution?: () => void;
+  onKeepPartial?: () => void;
+  onCancelCreated?: () => void;
 }) {
   const [clarification, setClarification] = useState("");
   const selected =
@@ -61,7 +73,11 @@ export function PlanWorkspace({
         <p className="mt-2 text-sm leading-6">{plan.request}</p>
         {plan.summary ? <p className="mt-3 text-sm text-muted">{plan.summary}</p> : null}
         <div className="mt-6">
-          <AgentTimeline items={plan.timeline} working={working} />
+          {plan.agents && plan.agents.length > 0 ? (
+            <AgentBoard agents={plan.agents} />
+          ) : (
+            <AgentTimeline items={plan.timeline} working={working} />
+          )}
         </div>
       </div>
       <motion.div
@@ -116,7 +132,25 @@ export function PlanWorkspace({
           </section>
         ) : null}
 
-        {plan.status === "awaiting_approval" && selected ? (
+        {plan.itineraries && plan.itineraries.length > 0 ? (
+          <ItineraryPlans
+            itineraries={plan.itineraries}
+            agents={plan.agents ?? []}
+            timeZone={timeZone}
+            busy={busy}
+            status={plan.status}
+            executionActions={plan.execution_actions}
+            resolution={plan.execution_resolution}
+            parallelSpeedup={plan.parallel_speedup}
+            onApprove={(itineraryId) => onApproveItinerary?.(itineraryId)}
+            onRevise={(message) => onRevise?.(message)}
+            onRetry={() => onRetryExecution?.()}
+            onKeep={() => onKeepPartial?.()}
+            onCancelCreated={() => onCancelCreated?.()}
+          />
+        ) : null}
+
+        {plan.status === "awaiting_approval" && selected && !plan.itineraries?.length ? (
           <Confirmation
             candidate={selected}
             timeZone={timeZone}

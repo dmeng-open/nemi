@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal
 
@@ -22,6 +24,16 @@ class RejectRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     approved: bool
+    itinerary_id: str | None = None
+
+
+class ReviseRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
+class ExecutionCommandRequest(BaseModel):
+    action: Literal["retry", "keep", "cancel_created"]
+    confirm: bool = False
 
 
 class PlanCreatedResponse(BaseModel):
@@ -102,6 +114,13 @@ class PlanResponse(BaseModel):
     error: PlanErrorResponse | None
     calendar: PlanCalendarResponse
     timeline: list[TimelineItemResponse]
+    itineraries: list[ItineraryResponse] = Field(default_factory=list)
+    agents: list[AgentProgressResponse] = Field(default_factory=list)
+    execution_status: str | None = None
+    execution_actions: list[ExecutionActionResponse] = Field(default_factory=list)
+    limiting_constraint: str | None = None
+    parallel_speedup: float | None = None
+    execution_resolution: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,3 +139,54 @@ class TimelineResponse(BaseModel):
     plan_id: str
     status: str
     timeline: list[TimelineItemResponse]
+
+
+class ItineraryItemResponse(BaseModel):
+    item_type: str
+    title: str
+    start: datetime
+    end: datetime
+    location: str | None = None
+    estimated_cost: float | None = None
+    travel_time_is_estimate: bool = False
+
+
+class ConstraintCheckResponse(BaseModel):
+    code: str
+    label: str
+    status: str
+    message: str
+
+
+class ItineraryResponse(BaseModel):
+    id: str
+    items: list[ItineraryItemResponse]
+    estimated_total_cost: float
+    start: datetime
+    end: datetime
+    explanation: str | None = None
+    checks: list[ConstraintCheckResponse] = Field(default_factory=list)
+    valid: bool = True
+
+
+class AgentProgressResponse(BaseModel):
+    agent: str
+    label: str
+    status: str
+    detail: str | None = None
+    duration_ms: int | None = None
+    model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost_usd: float = 0
+    tool_calls: list[str] = Field(default_factory=list)
+    retry_count: int = 0
+    error_code: str | None = None
+
+
+class ExecutionActionResponse(BaseModel):
+    item_id: str
+    title: str
+    status: str
+    calendar_event_id: str | None = None
+    error_code: str | None = None

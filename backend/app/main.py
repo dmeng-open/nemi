@@ -21,6 +21,24 @@ from app.services.planning.orchestrator import PlanningOrchestrator
 logger = logging.getLogger(__name__)
 
 
+async def _open_checkpointer(settings: Settings):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    if not settings.langgraph_checkpointing or not settings.database_url.startswith("postgresql"):
+        return MemorySaver(), None
+    url = settings.database_url.replace("postgresql+asyncpg", "postgresql", 1)
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        manager = AsyncPostgresSaver.from_conn_string(url)
+        saver = await manager.__aenter__()
+        await saver.setup()
+        return saver, manager
+    except Exception as exc:
+        logger.warning("checkpoint_unavailable", extra={"detail": safe_error_text(exc)})
+        return MemorySaver(), None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
@@ -39,9 +57,15 @@ async def lifespan(app: FastAPI):
             await session.commit()
     except Exception as exc:
         logger.warning("database_not_ready", extra={"detail": safe_error_text(exc)})
-    app.state.orchestrator = PlanningOrchestrator(factory, settings)
-    yield
-    await engine.dispose()
+    checkpointer, checkpoint_cm = await _open_checkpointer(settings)
+    app.state.checkpointer = checkpointer
+    app.state.orchestrator = PlanningOrchestrator(factory, settings, checkpointer=checkpointer)
+    try:
+        yield
+    finally:
+        if checkpoint_cm is not None:
+            await checkpoint_cm.__aexit__(None, None, None)
+        await engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

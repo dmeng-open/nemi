@@ -4,6 +4,10 @@ from app.core.messages import SAFE_MESSAGES
 def timeline_label(event_type: str, metadata: dict | None) -> str:
     meta = metadata or {}
     kind = meta.get("kind")
+    if event_type.startswith("agent_"):
+        detail = meta.get("detail")
+        if isinstance(detail, str) and detail:
+            return detail
     if event_type == "request_received":
         return "Received your request"
     if event_type == "constraints_parsed":

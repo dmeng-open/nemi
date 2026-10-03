@@ -27,4 +27,7 @@ SAFE_MESSAGES = {
     "calendar_not_connected": "Connect Google Calendar to add this plan.",
     "calendar_read_failed": "Nemi could not re-check your calendar, so this was not added. Download the .ics file to add it yourself.",
     "calendar_write_unconfirmed": "Nemi could not confirm the calendar event. Download the .ics file to add it yourself.",
+    "partial_success": "Part of this plan was added to your calendar. You can retry the rest, keep what was added, or remove it.",
+    "tool_forbidden": "That action is not available.",
+    "tool_limit": "Planning stopped because an agent made too many tool calls.",
 }

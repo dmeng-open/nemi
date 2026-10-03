@@ -5,16 +5,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, PlanNotFound, PlanStateError
 from app.core.messages import SAFE_MESSAGES
+from app.domain.calendar import CalendarEvent
+from app.domain.candidates import Candidate
 from app.integrations.calendar.local import row_to_event
 from app.models.agent import AgentRunEvent
 from app.models.calendar import CalendarAction, LocalCalendarEvent
+from app.models.multi_agent import (
+    AgentArtifact,
+    AgentSpan,
+    ExecutionAction,
+    ItineraryRecord,
+)
 from app.models.planning import PlanningSession, Recommendation, RecommendationCandidate
 from app.models.user import LOCAL_USER_ID
-from app.domain.calendar import CalendarEvent
-from app.domain.candidates import Candidate
 from app.schemas.plans import (
+    AgentProgressResponse,
     CandidateResponse,
+    ConstraintCheckResponse,
+    ExecutionActionResponse,
     ExecutionResponse,
+    ItineraryItemResponse,
+    ItineraryResponse,
     PlanCalendarResponse,
     PlanErrorResponse,
     PlanResponse,
@@ -24,10 +35,10 @@ from app.schemas.plans import (
     TimelineResponse,
 )
 from app.services.calendar.idempotency import make_idempotency_key
-
-ICS_FALLBACK_CODES = {"calendar_read_failed", "calendar_write_unconfirmed"}
 from app.services.calendar.time import as_utc
 from app.services.planning.timeline import timeline_label, visible_timeline
+
+ICS_FALLBACK_CODES = {"calendar_read_failed", "calendar_write_unconfirmed"}
 
 
 async def get_plan_or_404(session: AsyncSession, plan_id: uuid.UUID) -> PlanningSession:
@@ -65,6 +76,13 @@ async def build_plan_response(session: AsyncSession, plan_id: uuid.UUID) -> Plan
         error=error,
         calendar=PlanCalendarResponse(ics_available=ics_available),
         timeline=timeline,
+        itineraries=await _itineraries(session, plan.id),
+        agents=await _agents(session, plan),
+        execution_status=_execution_status(plan),
+        execution_actions=await _execution_actions(session, plan.id),
+        limiting_constraint=await _limiting(session, plan.id),
+        parallel_speedup=await _speedup(session, plan.id),
+        execution_resolution=await _resolution(session, plan.id),
         created_at=plan.created_at,
         updated_at=plan.updated_at,
     )
@@ -314,3 +332,191 @@ async def _event_from_candidate(
         description="\n\n".join(lines),
         source_url=candidate.source_url,
     )
+
+
+_AGENT_ORDER = [
+    "supervisor",
+    "calendar_analysis",
+    "restaurant_research",
+    "event_research",
+    "itinerary_planner",
+    "verifier",
+    "critic",
+    "execution",
+]
+_AGENT_LABELS = {
+    "supervisor": "Supervisor",
+    "calendar_analysis": "Calendar",
+    "restaurant_research": "Restaurants",
+    "event_research": "Activities",
+    "itinerary_planner": "Planner",
+    "verifier": "Verifier",
+    "critic": "Critic",
+    "execution": "Scheduling",
+}
+
+
+def _execution_status(plan: PlanningSession) -> str | None:
+    if plan.plan_type != "itinerary":
+        return None
+    if plan.status == "scheduled":
+        return "success"
+    if plan.status == "partial_success":
+        return "partial_success"
+    if plan.error_code in {"partial_success", "failed"}:
+        return plan.error_code
+    return None
+
+
+async def _itineraries(session: AsyncSession, plan_id: uuid.UUID) -> list[ItineraryResponse]:
+    rows = list(
+        (
+            await session.scalars(
+                select(ItineraryRecord)
+                .where(ItineraryRecord.session_id == plan_id)
+                .order_by(ItineraryRecord.rank_position)
+            )
+        ).all()
+    )
+    responses: list[ItineraryResponse] = []
+    for row in rows:
+        payload = row.payload or {}
+        items = [
+            ItineraryItemResponse(
+                item_type=item["item_type"],
+                title=item["title"],
+                start=item["start_datetime"],
+                end=item["end_datetime"],
+                location=item.get("location"),
+                estimated_cost=item.get("estimated_cost"),
+                travel_time_is_estimate=bool(item.get("travel_time_is_estimate")),
+            )
+            for item in payload.get("items") or []
+        ]
+        checks = [
+            ConstraintCheckResponse.model_validate(item) for item in payload.get("checks") or []
+        ]
+        responses.append(
+            ItineraryResponse(
+                id=row.itinerary_key,
+                items=items,
+                estimated_total_cost=row.estimated_total_cost,
+                start=row.start_at,
+                end=row.end_at,
+                explanation=row.explanation,
+                checks=checks,
+                valid=row.valid,
+            )
+        )
+    return responses
+
+
+async def _agents(session: AsyncSession, plan: PlanningSession) -> list[AgentProgressResponse]:
+    if plan.plan_type != "itinerary":
+        return []
+    spans = list(
+        (
+            await session.scalars(
+                select(AgentSpan)
+                .where(AgentSpan.session_id == plan.id)
+                .order_by(AgentSpan.started_at)
+            )
+        ).all()
+    )
+    latest: dict[str, AgentSpan] = {}
+    for span in spans:
+        latest[span.agent_name] = span
+    agents: list[AgentProgressResponse] = []
+    names = list(_AGENT_ORDER)
+    if (
+        plan.status not in {"scheduling", "scheduled", "partial_success", "failed"}
+        and "execution" not in latest
+    ):
+        names = [name for name in names if name != "execution"]
+    for name in names:
+        span = latest.get(name)
+        if span is None:
+            status = "waiting" if plan.status == "processing" else "waiting"
+            agents.append(
+                AgentProgressResponse(
+                    agent=name,
+                    label=_AGENT_LABELS[name],
+                    status=status,
+                    detail="Waiting",
+                )
+            )
+            continue
+        detail = None
+        if isinstance(span.safe_metadata, dict):
+            detail = span.safe_metadata.get("detail")
+        agents.append(
+            AgentProgressResponse(
+                agent=name,
+                label=_AGENT_LABELS[name],
+                status=span.status,
+                detail=detail if isinstance(detail, str) else None,
+                duration_ms=span.duration_ms,
+                model=span.model,
+                input_tokens=span.input_tokens,
+                output_tokens=span.output_tokens,
+                estimated_cost_usd=span.estimated_cost_usd,
+                tool_calls=list(span.tool_calls or []),
+                retry_count=span.retry_count,
+                error_code=span.error_code,
+            )
+        )
+    return agents
+
+
+async def _execution_actions(
+    session: AsyncSession, plan_id: uuid.UUID
+) -> list[ExecutionActionResponse]:
+    rows = list(
+        (
+            await session.scalars(
+                select(ExecutionAction)
+                .where(ExecutionAction.session_id == plan_id)
+                .order_by(ExecutionAction.created_at)
+            )
+        ).all()
+    )
+    return [
+        ExecutionActionResponse(
+            item_id=row.item_key,
+            title=row.title,
+            status=row.status,
+            calendar_event_id=row.calendar_event_id,
+            error_code=row.error_code,
+        )
+        for row in rows
+    ]
+
+
+async def _metric(session: AsyncSession, plan_id: uuid.UUID) -> dict:
+    row = await session.scalar(
+        select(AgentArtifact).where(
+            AgentArtifact.session_id == plan_id,
+            AgentArtifact.artifact_type == "planning_metrics",
+        )
+    )
+    if row is None or not isinstance(row.payload, dict):
+        return {}
+    return row.payload
+
+
+async def _limiting(session: AsyncSession, plan_id: uuid.UUID) -> str | None:
+    value = (await _metric(session, plan_id)).get("limiting_constraint")
+    return value if isinstance(value, str) else None
+
+
+async def _speedup(session: AsyncSession, plan_id: uuid.UUID) -> float | None:
+    value = (await _metric(session, plan_id)).get("parallel_speedup")
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+async def _resolution(session: AsyncSession, plan_id: uuid.UUID) -> str | None:
+    value = (await _metric(session, plan_id)).get("resolution")
+    return value if isinstance(value, str) else None
+

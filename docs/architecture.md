@@ -1,6 +1,10 @@
 # Nemi architecture
 
-Nemi V0 is a local planning agent. A person describes an activity or a meal, Nemi turns that into constraints, checks a local calendar, searches a provider, ranks the options with deterministic code, and waits for an explicit yes before writing a calendar event.
+Nemi is a local planning agent. A single activity or meal still follows the loop below: constraints, calendar, one search, deterministic rank, then an explicit yes before one calendar event.
+
+Multi-part requests (dinner and something afterwards, a date night, afternoon and evening) use a second LangGraph. A supervisor splits the goal, calendar and research run in parallel, a planner builds whole itineraries, a deterministic constraint engine and a critic check them, and execution writes calendar events only after the graph resumes from an interrupt. That design is [multi-agent-architecture.md](versions/v2/multi-agent-architecture.md). The implementation contract is [v2/plan.md](plans/v2/plan.md). Replanning rules are [replanning.md](versions/v2/replanning.md). Writes are [execution-safety.md](versions/v2/execution-safety.md). Plans are in [plans](plans/README.md). What shipped is in [versions](versions/README.md).
+
+Nemi V0 is the original shape of the single-activity loop. A person describes an activity or a meal, Nemi turns that into constraints, checks a local calendar, searches a provider, ranks the options with deterministic code, and waits for an explicit yes before writing a calendar event.
 
 The V0 process is one FastAPI application, one Vite React app, and PostgreSQL. OpenAI is the only required external service. Events, restaurants, and calendar writes go through provider interfaces whose default implementations are local.
 
@@ -269,9 +273,9 @@ The Vite dev server proxies `/api` and `/health` to FastAPI.
 
 These are boundaries, not V0 work.
 
-- V1, in progress on this tree: Ticketmaster, Google Places, and Google Calendar behind the existing provider seam. The implementation contract is [v1-plan.md](v1-plan.md). Mock and local mode still run with no keys.
-- V2: train a ranker on `recommendation_candidates` and `interaction_events`, then add another `CandidateRanker`. The heuristic remains the baseline.
-- V3: publish the dotted interaction topics. Consumers can build features and training sets. Kafka is not justified before there is a real second consumer.
+- V1: Ticketmaster, Google Places, and Google Calendar behind the existing provider seam. The implementation contract is [v1/plan.md](plans/v1/plan.md). Mock and local mode still run with no keys.
+- V2, on this tree: hierarchical planning for multi-part evenings. The contract is [v2/plan.md](plans/v2/plan.md). Interaction topics stay in Postgres until a second consumer exists. Kafka is still not justified.
+- V3: train a ranker on `recommendation_candidates` and `interaction_events`, then add another `CandidateRanker`. The heuristic remains the baseline. See [v3](plans/v3/README.md).
 - V4: move Postgres, files, images, and secrets onto managed infrastructure when the app leaves one machine.
 - V5: split services only when their scaling or release needs diverge.
 

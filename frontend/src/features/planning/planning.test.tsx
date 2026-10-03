@@ -271,4 +271,60 @@ describe("v1 planning states", () => {
     expect(onReject).toHaveBeenCalledTimes(1);
     expect(onReject).toHaveBeenCalledWith(expect.objectContaining({ id: "evt_other" }));
   });
+
+  it("shows an itinerary and approves that plan", async () => {
+    const user = userEvent.setup();
+    const onApproveItinerary = vi.fn();
+    renderWorkspace(
+      planFixture({
+        plan_type: "itinerary",
+        status: "awaiting_approval",
+        recommendations: [],
+        itineraries: [
+          {
+            id: "itin_a",
+            estimated_total_cost: 54,
+            start: "2026-10-03T23:00:00Z",
+            end: "2026-10-04T02:30:00Z",
+            explanation: "Dinner at Nori Ramen House, then Evening Jazz Room.",
+            valid: true,
+            checks: [
+              { code: "BUDGET", label: "Budget", status: "pass", message: "Within budget." },
+            ],
+            items: [
+              {
+                item_type: "restaurant",
+                title: "Nori Ramen House",
+                start: "2026-10-03T23:20:00Z",
+                end: "2026-10-04T00:50:00Z",
+                location: "Lincoln Ave",
+                estimated_cost: 22,
+                travel_time_is_estimate: false,
+              },
+            ],
+          },
+        ],
+        agents: [
+          {
+            agent: "calendar_analysis",
+            label: "Calendar",
+            status: "completed",
+            detail: "Free after 5 PM",
+            duration_ms: 12,
+            model: "deterministic",
+            input_tokens: 0,
+            output_tokens: 0,
+            estimated_cost_usd: 0,
+            tool_calls: [],
+            retry_count: 0,
+            error_code: null,
+          },
+        ],
+      }),
+      { onApproveItinerary },
+    );
+    expect(screen.getByText("Free after 5 PM")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve & add to calendar" }));
+    expect(onApproveItinerary).toHaveBeenCalledWith("itin_a");
+  });
 });

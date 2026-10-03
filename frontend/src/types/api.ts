@@ -5,6 +5,7 @@ export type PlanStatus =
   | "awaiting_selection"
   | "awaiting_approval"
   | "scheduled"
+  | "partial_success"
   | "failed"
   | "no_matches"
   | "cancelled";
@@ -69,7 +70,7 @@ export type Plan = {
   plan_id: string;
   status: PlanStatus;
   request: string;
-  plan_type: "event" | "restaurant" | null;
+  plan_type: "event" | "restaurant" | "itinerary" | null;
   summary: string | null;
   clarification_question: string | null;
   recommendations: Candidate[];
@@ -78,15 +79,73 @@ export type Plan = {
   error: PlanError | null;
   calendar: { ics_available: boolean };
   timeline: TimelineItem[];
+  itineraries?: Itinerary[];
+  agents?: AgentProgress[];
+  execution_status?: string | null;
+  execution_actions?: ExecutionAction[];
+  limiting_constraint?: string | null;
+  parallel_speedup?: number | null;
+  execution_resolution?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ItineraryItem = {
+  item_type: "restaurant" | "event" | "travel" | "buffer" | string;
+  title: string;
+  start: string;
+  end: string;
+  location: string | null;
+  estimated_cost: number | null;
+  travel_time_is_estimate: boolean;
+};
+
+export type ConstraintCheck = {
+  code: string;
+  label: string;
+  status: "pass" | "fail" | "soft" | string;
+  message: string;
+};
+
+export type Itinerary = {
+  id: string;
+  items: ItineraryItem[];
+  estimated_total_cost: number;
+  start: string;
+  end: string;
+  explanation: string | null;
+  checks: ConstraintCheck[];
+  valid: boolean;
+};
+
+export type AgentProgress = {
+  agent: string;
+  label: string;
+  status: string;
+  detail: string | null;
+  duration_ms: number | null;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number;
+  tool_calls: string[];
+  retry_count: number;
+  error_code: string | null;
+};
+
+export type ExecutionAction = {
+  item_id: string;
+  title: string;
+  status: string;
+  calendar_event_id: string | null;
+  error_code: string | null;
 };
 
 export type PlanSummary = {
   plan_id: string;
   status: PlanStatus;
   request: string;
-  plan_type: "event" | "restaurant" | null;
+  plan_type: "event" | "restaurant" | "itinerary" | null;
   summary: string | null;
   created_at: string;
   selected_title: string | null;

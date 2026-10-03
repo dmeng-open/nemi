@@ -1,14 +1,16 @@
 # Nemi
 
-Nemi is a personal planning agent. You describe an afternoon or a meal. Nemi turns that into constraints, checks a local calendar, searches activities or restaurants, ranks the options, and waits for an explicit yes before it writes anything down.
+Nemi is a personal planning agent. You describe an afternoon, a meal, or an evening that needs both. A single activity or meal becomes constraints, a calendar check, a search, a ranked shortlist, and a wait for an explicit yes before anything is written. A multi-part evening is planned as an itinerary: calendar, restaurants, and activities are researched in parallel, then checked against your budget, diet, and the time you need to be home.
 
-The default local product uses OpenAI for language and mock providers for events, restaurants, and the calendar, so the loop runs without Ticketmaster, Google Places, or Google Calendar credentials. Those providers can be turned on with environment variables. Setup is in [docs/integrations.md](docs/integrations.md). The V1 contract is [docs/plans/v1-plan.md](docs/plans/v1-plan.md). User flows for each version are in [docs/user-flows](docs/user-flows/README.md).
+The default local product uses OpenAI for language and mock providers for events, restaurants, and the calendar, so the loop runs without Ticketmaster, Google Places, or Google Calendar credentials. Those providers can be turned on with environment variables. Setup is in [docs/versions/v1/integrations.md](docs/versions/v1/integrations.md). Google Calendar setup is in [docs/versions/v2/google-calendar.md](docs/versions/v2/google-calendar.md). Plans written before implementation are in [docs/plans](docs/plans/README.md). What each version does after it shipped is in [docs/versions](docs/versions/README.md).
 
 ## Product vision
 
-Nemi is not a general chatbot. The loop is fixed:
+Nemi is not a general chatbot. A single activity or meal still follows one loop:
 
 understand the request, load preferences, check the schedule, search, rank, verify, recommend, ask, then write one calendar event.
+
+A multi-part evening uses a supervisor and specialist agents. The person sees the plan being built, then approves a whole itinerary before calendar events are created.
 
 Two kinds of plan are supported:
 
@@ -30,7 +32,7 @@ Capture these locally after `npm run dev` and the API are running:
 
 ## Architecture
 
-Details, diagrams, and the decisions that should stay put live in [docs/architecture.md](docs/architecture.md). What a person does in each version is in [docs/user-flows](docs/user-flows/README.md). The V0 phase checklist is [docs/plans/v0-plan.md](docs/plans/v0-plan.md). V1 continues in [docs/plans/v1-plan.md](docs/plans/v1-plan.md).
+Details, diagrams, and the decisions that should stay put live in [docs/architecture.md](docs/architecture.md). Plans are in [docs/plans](docs/plans/README.md). Shipped behavior is in [docs/versions](docs/versions/README.md).
 
 ```text
 React (Vite)  →  FastAPI  →  LangGraph
@@ -156,15 +158,15 @@ OpenAI, the graph, the API, the database, and the UI are real. The catalogs are 
 - The discovery run is in-process. Poll `GET /api/plans/{id}` while it works.
 - Chain-of-thought is not stored or shown. The timeline is operational events only.
 
-## Future roadmap
+## Roadmap
 
-Documented only. Not built.
+**V0.** Local demo loop. See [docs/plans/v0/plan.md](docs/plans/v0/plan.md).
 
-**V1.** Ticketmaster, Google Places, and Google Calendar behind the existing provider interfaces. See [docs/v1-plan.md](docs/v1-plan.md) and [docs/integrations.md](docs/integrations.md).
+**V1.** Ticketmaster, Google Places, and Google Calendar behind the existing provider interfaces. See [docs/plans/v1/plan.md](docs/plans/v1/plan.md) and [docs/versions/v1/integrations.md](docs/versions/v1/integrations.md).
 
-**V2.** Train on `recommendation_candidates` and `interaction_events`. Keep the heuristic as the baseline and add another `CandidateRanker`. Measure Recall@K and NDCG@K before treating a model as the ranker.
+**V2.** Hierarchical planning for multi-part evenings: parallel research, itinerary cards, a deterministic constraint check, targeted replans, and calendar writes only after the graph resumes. The plan is [docs/plans/v2/plan.md](docs/plans/v2/plan.md). The shipped design is [docs/versions/v2/multi-agent-architecture.md](docs/versions/v2/multi-agent-architecture.md). Interaction topics stay in Postgres until a second consumer exists. Kafka is not part of this version.
 
-**V3.** Publish the interaction topics (`recommendation.shown`, `plan.scheduled`, and the rest) when a second consumer exists. The table is already shaped for that. Kafka is not justified before then.
+**V3.** Train on `recommendation_candidates` and `interaction_events`. Keep the heuristic as the baseline and add another `CandidateRanker`. Measure Recall@K and NDCG@K before treating a model as the ranker. Not built. See [docs/plans/v3/README.md](docs/plans/v3/README.md).
 
 **V4.** Managed Postgres, object storage, images, and secrets when the app leaves one machine.
 

@@ -47,7 +47,7 @@ A person running Nemi locally can point events, restaurants, and calendar at Tic
 
 **Fact.** One Alembic revision, `ad1a206d0e8d`. `GET /api/integrations` marks Ticketmaster, Google Places, and Google Calendar unavailable even when those settings are selected. The frontend has one planning journey, no OAuth, no location fields, and no provider label on cards. Routes are `/`, `/plans`, `/plans/:planId`, `/preferences`, `/integrations`, `/settings`.
 
-**Fact.** `docs/plans/v0-plan.md` exists. `docs/v0-plan.md` does not. `.env.example` already names `TICKETMASTER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`. It has no `APP_BASE_URL`.
+**Fact.** The V0 checklist is `docs/plans/v0/plan.md`. There is no second copy at `docs/v0-plan.md`. `.env.example` already names `TICKETMASTER_API_KEY`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI`. It has no `APP_BASE_URL`.
 
 ## Facts
 
@@ -526,7 +526,7 @@ No percentage rollout, feature-flag service, or production deploy. If a real pro
 
 `.env.example` gains `APP_BASE_URL=http://localhost:5173`. `GOOGLE_REDIRECT_URI` stays the documented callback, `http://localhost:8000/api/integrations/google/calendar/callback`. Do not add `API_BASE_URL`. The redirect URI is already explicit.
 
-After implementation, update `docs/architecture.md`, `README.md`, and `docs/plans/v0-plan.md` (point V1 at this file; do not create `docs/v0-plan.md`). Add `docs/integrations.md` with key setup and no secret values. Update the progress table in this file as steps land.
+After implementation, update `docs/architecture.md`, `README.md`, and `docs/plans/v0/plan.md` (point V1 at this file; do not create `docs/v0-plan.md`). Add `docs/versions/v1/integrations.md` with key setup and no secret values. Update the progress table in this file as steps land.
 
 ## Risks
 
@@ -554,7 +554,7 @@ Each step leaves mock/local mode runnable.
 9. **Interaction events.** Fill `recommendation_candidate_id` on shown, selected, rejected, and scheduled. Write `plan.scheduled` once per successful click. Add `POST /reject` and `GET /api/interactions`. Fact-check explanations.
 10. **Frontend.** Location fields, location panel, continue, Connect and Disconnect, demo line, provider failure copy, “Not this”, `.ics` on write failure, and the Settings link. No new routes.
 11. **Tests.** Add the mocked-HTTP, workflow, interaction, and timezone tests. Run the preserved pytest and vitest suites in mock/local mode.
-12. **Docs.** Update the files listed under Rollout. `docs/integrations.md` explains which keys, the redirect URI, and `APP_BASE_URL`, with empty values only.
+12. **Docs.** Update the files listed under Rollout. `docs/versions/v1/integrations.md` explains which keys, the redirect URI, and `APP_BASE_URL`, with empty values only.
 
 ## Human Approval Requirements
 

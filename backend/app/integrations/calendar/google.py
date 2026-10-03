@@ -136,6 +136,34 @@ class GoogleCalendarProvider:
             raise CalendarCreateUnconfirmed()
         raise CalendarCreateUnconfirmed()
 
+    async def delete_event(self, event_id: str) -> None:
+        token = await self._access_token(force=False)
+        response = await self._send(
+            "DELETE",
+            f"{CALENDAR_API}/{event_id}",
+            token,
+            params=None,
+            json_body=None,
+        )
+        if response.status_code == 401:
+            token = await self._access_token(force=True)
+            response = await self._send(
+                "DELETE",
+                f"{CALENDAR_API}/{event_id}",
+                token,
+                params=None,
+                json_body=None,
+            )
+        if response.status_code in {200, 204, 404}:
+            return
+        raise error_from_status(
+            response.status_code,
+            provider="google_calendar",
+            operation="delete",
+            not_configured_message="Connect Google Calendar to change this plan.",
+            failed_message="Google Calendar could not remove the event.",
+        )
+
     async def _insert(self, draft: NewCalendarEvent, event_id: str) -> None:
         body = {
             "id": event_id,

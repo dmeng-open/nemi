@@ -1,8 +1,8 @@
 from datetime import timedelta
 
 from app.core.exceptions import (
-    ApprovalRequired,
     AppError,
+    ApprovalRequired,
     CalendarCreateUnconfirmed,
     CalendarNotConnected,
     CalendarReadFailed,

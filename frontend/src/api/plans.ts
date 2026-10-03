@@ -47,9 +47,27 @@ export function clearSelection(planId: string) {
   return request<Plan>(`/api/plans/${planId}/selection`, { method: "DELETE" });
 }
 
-export function approvePlan(planId: string, approved: boolean) {
+export function approvePlan(planId: string, approved: boolean, itineraryId?: string) {
   return request<Plan>(`/api/plans/${planId}/approve`, {
     method: "POST",
-    body: JSON.stringify({ approved }),
+    body: JSON.stringify({ approved, itinerary_id: itineraryId ?? null }),
+  });
+}
+
+export function revisePlan(planId: string, message: string) {
+  return request<Plan>(`/api/plans/${planId}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+export function commandExecution(
+  planId: string,
+  action: "retry" | "keep" | "cancel_created",
+  confirm = false,
+) {
+  return request<Plan>(`/api/plans/${planId}/execution`, {
+    method: "POST",
+    body: JSON.stringify({ action, confirm }),
   });
 }

@@ -44,6 +44,19 @@ class Settings(BaseSettings):
 
     auto_create_schema: bool = False
 
+    supervisor_model: str = ""
+    research_model: str = ""
+    planner_model: str = ""
+    critic_model: str = ""
+    langgraph_checkpointing: bool = True
+    environment: str = "local"
+    max_replan_attempts: int = 3
+    max_supervisor_steps: int = 20
+    max_tool_calls_per_agent: int = 10
+    max_total_llm_calls: int = 12
+    specialist_timeout_seconds: float = 25
+    failure_injection: str = ""
+
     @field_validator("app_timezone")
     @classmethod
     def timezone_must_exist(cls, value: str) -> str:
@@ -87,6 +100,17 @@ class Settings(BaseSettings):
         from zoneinfo import ZoneInfo
 
         return ZoneInfo(self.app_timezone)
+
+    def model_for(self, role: str) -> str:
+        specific = getattr(self, f"{role}_model", "") or ""
+        cleaned = specific.strip()
+        return cleaned or self.openai_model
+
+    def active_failure_injection(self) -> str | None:
+        if self.environment.strip().lower() == "production":
+            return None
+        raw = self.failure_injection.strip()
+        return raw or None
 
 
 @lru_cache
