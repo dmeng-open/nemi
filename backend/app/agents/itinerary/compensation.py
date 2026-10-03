@@ -3,8 +3,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.v3.artifacts import Itinerary
-from app.agents.v3.permissions import authorize
+from app.agents.itinerary.artifacts import Itinerary
+from app.agents.itinerary.permissions import authorize
 from app.core.exceptions import PlanStateError, ScheduleConflictError
 from app.core.messages import SAFE_MESSAGES
 from app.models.multi_agent import AgentArtifact, ExecutionAction, ItineraryRecord

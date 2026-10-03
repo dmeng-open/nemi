@@ -153,7 +153,7 @@ async def execution_command(
     orchestrator: PlanningOrchestrator = Depends(get_orchestrator),
     session: AsyncSession = Depends(get_db),
 ) -> PlanResponse:
-    from app.agents.v3.compensation import apply_execution_command
+    from app.agents.itinerary.compensation import apply_execution_command
     from app.services.planning.present import get_plan_or_404
 
     plan = await get_plan_or_404(session, plan_id)

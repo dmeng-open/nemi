@@ -275,7 +275,7 @@ These are boundaries, not V0 work.
 
 - V1: Ticketmaster, Google Places, and Google Calendar behind the existing provider seam. The implementation contract is [v1/plan.md](plans/v1/plan.md). Mock and local mode still run with no keys.
 - V2, on this tree: hierarchical planning for multi-part evenings. The contract is [v2/plan.md](plans/v2/plan.md). Interaction topics stay in Postgres until a second consumer exists. Kafka is still not justified.
-- V3: train a ranker on `recommendation_candidates` and `interaction_events`, then add another `CandidateRanker`. The heuristic remains the baseline. See [v3](plans/v3/README.md).
+- Later: train a ranker on `recommendation_candidates` and `interaction_events`, then add another `CandidateRanker`. The heuristic remains the baseline. See [ranker](plans/ranker/README.md).
 - V4: move Postgres, files, images, and secrets onto managed infrastructure when the app leaves one machine.
 - V5: split services only when their scaling or release needs diverge.
 

@@ -90,3 +90,31 @@ async def test_saturday_event_stays_on_the_single_activity_path(session_factory,
         plan = await build_plan_response(session, plan_id)
     assert plan.plan_type == "event"
     assert plan.status == "awaiting_selection"
+
+
+@pytest.mark.asyncio
+async def test_revision_limit_stays_approvable(session_factory, settings, clock) -> None:
+    settings.max_replan_attempts = 1
+    orchestrator = PlanningOrchestrator(session_factory, settings, clock=clock)
+    plan_id = await orchestrator.create_plan(DATE_NIGHT)
+    await orchestrator.run_discovery(plan_id)
+    await orchestrator.revise(plan_id, "Make this cheaper")
+    await orchestrator.revise(plan_id, "Make this cheaper")
+    from app.models.calendar import LocalCalendarEvent
+    from app.services.planning.present import build_plan_response
+    from sqlalchemy import func, select
+
+    async with session_factory() as session:
+        plan = await build_plan_response(session, plan_id)
+    assert plan.status == "awaiting_approval", plan.error
+    assert plan.itineraries
+    await orchestrator.approve(plan_id, True, "not-a-real-itinerary")
+    async with session_factory() as session:
+        stalled = await build_plan_response(session, plan_id)
+        written = await session.scalar(select(func.count()).select_from(LocalCalendarEvent))
+    assert stalled.status == "awaiting_approval"
+    assert written == 0
+    await orchestrator.approve(plan_id, True, plan.itineraries[0].id)
+    async with session_factory() as session:
+        finished = await build_plan_response(session, plan_id)
+    assert finished.status == "scheduled", finished.error

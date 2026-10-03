@@ -3,17 +3,17 @@
 from datetime import date
 
 import pytest
-from app.agents.v3.artifacts import (
+from app.agents.itinerary.artifacts import (
     EventResearchArtifact,
     ItineraryConstraints,
     RestaurantResearchArtifact,
 )
-from app.agents.v3.engine import build_itineraries
+from app.agents.itinerary.engine import build_itineraries
 from app.models.calendar import LocalCalendarEvent
 from app.models.multi_agent import AgentSpan
 from app.services.planning.orchestrator import PlanningOrchestrator
 from sqlalchemy import func, select
-from tests.test_v3_smoke import DATE_NIGHT
+from tests.test_itinerary_smoke import DATE_NIGHT
 
 
 async def _run(session_factory, settings, clock, text: str, injection: str = ""):
@@ -128,7 +128,7 @@ async def test_partial_calendar_write_can_retry(session_factory, settings, clock
     assert plan.status == "partial_success"
     assert count == 1
     settings.failure_injection = ""
-    from app.agents.v3.compensation import apply_execution_command
+    from app.agents.itinerary.compensation import apply_execution_command
     from app.services.planning.present import get_plan_or_404
 
     async with session_factory() as session:
@@ -143,7 +143,7 @@ async def test_partial_calendar_write_can_retry(session_factory, settings, clock
 
 async def test_cancel_created_events_requires_confirmation(session_factory, settings, clock) -> None:
     orchestrator, plan_id = await _run(session_factory, settings, clock, DATE_NIGHT)
-    from app.agents.v3.compensation import apply_execution_command
+    from app.agents.itinerary.compensation import apply_execution_command
     from app.core.exceptions import PlanStateError
     from app.services.planning.present import build_plan_response, get_plan_or_404
 

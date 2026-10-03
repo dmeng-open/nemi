@@ -75,7 +75,7 @@ Checkpoint thread id is the plan id. Resume uses `Command(resume=...)` on that t
 
 ## Models and prompts
 
-`SUPERVISOR_MODEL`, `RESEARCH_MODEL`, `PLANNER_MODEL`, and `CRITIC_MODEL` override `OPENAI_MODEL` when set. The V2 coordination policy is deterministic and records `model=deterministic` plus a policy version (`supervisor_policy_v1`, `restaurant_research_v1`, `event_research_v1`, `itinerary_planner_v1`, `verifier_v1`, `critic_v1`). Prompt text for a later model call lives in `backend/app/agents/v3/prompts.py`. Structured output that fails validation is retried up to three times (`PLANNER_INVALID_OUTPUT` exercises this). Chain-of-thought is not stored.
+`SUPERVISOR_MODEL`, `RESEARCH_MODEL`, `PLANNER_MODEL`, and `CRITIC_MODEL` override `OPENAI_MODEL` when set. The V2 coordination policy is deterministic and records `model=deterministic` plus a policy version (`supervisor_policy_v1`, `restaurant_research_v1`, `event_research_v1`, `itinerary_planner_v1`, `verifier_v1`, `critic_v1`). Prompt text for a later model call lives in `backend/app/agents/itinerary/prompts.py`. Structured output that fails validation is retried up to three times (`PLANNER_INVALID_OUTPUT` exercises this). Chain-of-thought is not stored.
 
 ## Limits
 

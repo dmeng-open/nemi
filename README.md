@@ -166,7 +166,7 @@ OpenAI, the graph, the API, the database, and the UI are real. The catalogs are 
 
 **V2.** Hierarchical planning for multi-part evenings: parallel research, itinerary cards, a deterministic constraint check, targeted replans, and calendar writes only after the graph resumes. The plan is [docs/plans/v2/plan.md](docs/plans/v2/plan.md). The shipped design is [docs/versions/v2/multi-agent-architecture.md](docs/versions/v2/multi-agent-architecture.md). Interaction topics stay in Postgres until a second consumer exists. Kafka is not part of this version.
 
-**V3.** Train on `recommendation_candidates` and `interaction_events`. Keep the heuristic as the baseline and add another `CandidateRanker`. Measure Recall@K and NDCG@K before treating a model as the ranker. Not built. See [docs/plans/v3/README.md](docs/plans/v3/README.md).
+**Later.** Train on `recommendation_candidates` and `interaction_events`. Keep the heuristic as the baseline and add another `CandidateRanker`. Measure Recall@K and NDCG@K before treating a model as the ranker. Not built. See [docs/plans/ranker/README.md](docs/plans/ranker/README.md).
 
 **V4.** Managed Postgres, object storage, images, and secrets when the app leaves one machine.
 

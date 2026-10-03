@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.nodes import EventLog
-from app.agents.v3.engine import estimate_cost_usd
+from app.agents.itinerary.engine import estimate_cost_usd
 from app.core.messages import SAFE_MESSAGES
 from app.models.agent import AgentRun, AgentRunEvent
 from app.models.multi_agent import (

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from app.agents.v3.artifacts import (
+from app.agents.itinerary.artifacts import (
     CalendarAnalysisResult,
     ConstraintCheck,
     CriticIssue,

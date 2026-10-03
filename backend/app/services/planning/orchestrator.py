@@ -18,7 +18,7 @@ from app.agents.llm import (
     UnconfiguredParser,
 )
 from app.agents.nodes import EventLog, PlanningDeps, default_schedule, make_nodes
-from app.agents.v3.routing import is_itinerary_request
+from app.agents.itinerary.routing import is_itinerary_request
 from app.core.clock import Clock, SystemClock
 from app.core.config import Settings
 from app.core.exceptions import (
@@ -153,7 +153,7 @@ class PlanningOrchestrator:
 
     async def run_discovery(self, plan_id: uuid.UUID) -> None:
         if await self._request_is_itinerary(plan_id):
-            from app.agents.v3.runtime import run_itinerary_discovery
+            from app.agents.itinerary.runtime import run_itinerary_discovery
 
             await run_itinerary_discovery(self, plan_id)
             return
@@ -288,7 +288,7 @@ class PlanningOrchestrator:
         itinerary_id: str | None = None,
     ) -> None:
         if await self._plan_is_itinerary(plan_id):
-            from app.agents.v3.runtime import resume_itinerary
+            from app.agents.itinerary.runtime import resume_itinerary
 
             action = "approve" if approved else "cancel"
             await resume_itinerary(
@@ -428,7 +428,7 @@ class PlanningOrchestrator:
     async def revise(self, plan_id: uuid.UUID, message: str) -> None:
         if not await self._plan_is_itinerary(plan_id):
             raise PlanStateError("Tell me which single option to change, or start a new plan.")
-        from app.agents.v3.runtime import resume_itinerary
+        from app.agents.itinerary.runtime import resume_itinerary
 
         await resume_itinerary(self, plan_id, {"action": "revise", "message": message})
 

@@ -1,4 +1,4 @@
-"""Versioned prompt text. V3 coordination does not call these yet.
+"""Versioned prompt text. Itinerary coordination does not call these yet.
 
 The deterministic policy versions recorded on spans match these names.
 A later model call should use the same schemas as the policy outputs.

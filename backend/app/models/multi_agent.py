@@ -19,7 +19,7 @@ class AgentThread(Base):
         Uuid, ForeignKey("planning_sessions.id"), unique=True
     )
     thread_id: Mapped[str] = mapped_column(String(80))
-    graph_name: Mapped[str] = mapped_column(String(64), default="itinerary_v3")
+    graph_name: Mapped[str] = mapped_column(String(64), default="itinerary")
     status: Mapped[str] = mapped_column(String(32), default="running")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

@@ -1,4 +1,4 @@
-"""v3 multi-agent planning tables
+"""itinerary planning tables
 
 Revision ID: e7b2d4f08c11
 Revises: c4e8b1a27d90

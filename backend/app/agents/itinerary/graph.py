@@ -13,7 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send, interrupt
 
 from app.agents.nodes import EventLog
-from app.agents.v3.artifacts import (
+from app.agents.itinerary.artifacts import (
     CalendarAnalysisResult,
     CriticResult,
     EventResearchArtifact,
@@ -26,7 +26,7 @@ from app.agents.v3.artifacts import (
     VerificationResult,
     dump,
 )
-from app.agents.v3.engine import (
+from app.agents.itinerary.engine import (
     build_itineraries,
     critique,
     dietary_status,
@@ -35,7 +35,7 @@ from app.agents.v3.engine import (
     review_semantics,
     validate_itinerary,
 )
-from app.agents.v3.failure import (
+from app.agents.itinerary.failure import (
     CALENDAR_READ_FAILURE,
     CALENDAR_WRITE_FAILURE,
     CRITIC_REJECT,
@@ -45,8 +45,8 @@ from app.agents.v3.failure import (
     SUPERVISOR_RETRY,
     active_injection,
 )
-from app.agents.v3.permissions import authorize, note_tool_call
-from app.agents.v3.prompts import (
+from app.agents.itinerary.permissions import authorize, note_tool_call
+from app.agents.itinerary.prompts import (
     CRITIC_POLICY_VERSION,
     EVENT_POLICY_VERSION,
     PLANNER_POLICY_VERSION,
@@ -54,8 +54,8 @@ from app.agents.v3.prompts import (
     SUPERVISOR_POLICY_VERSION,
     VERIFIER_POLICY_VERSION,
 )
-from app.agents.v3.reducers import merge_tasks
-from app.agents.v3.routing import (
+from app.agents.itinerary.reducers import merge_tasks
+from app.agents.itinerary.routing import (
     apply_critic_replan,
     decide_branch_retry,
     decompose_tasks,
@@ -442,10 +442,11 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
     async def prepare_approval(state: RootPlanningState) -> dict:
         count = len(state.get("itineraries") or [])
         summary = state.get("summary") or "Here is the plan I built."
-        if count == 1:
-            summary = "Here's the plan I built."
-        elif count > 1:
-            summary = f"Here are {count} plans I built."
+        if state.get("supervisor_decision") != "ASK_USER":
+            if count == 1:
+                summary = "Here's the plan I built."
+            elif count > 1:
+                summary = f"Here are {count} plans I built."
         return {"status": "awaiting_approval", "summary": summary}
 
     async def human_approval(state: RootPlanningState) -> dict:
@@ -461,13 +462,23 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
             decision = {"action": "cancel"}
         action = decision.get("action")
         if action == "approve":
+            options = list(state.get("itineraries") or [])
+            ids = [item["itinerary_id"] for item in options]
             chosen = decision.get("itinerary_id")
-            if not chosen and state.get("itineraries"):
-                chosen = state["itineraries"][0]["itinerary_id"]
+            if chosen not in ids:
+                if chosen or len(ids) != 1:
+                    return {
+                        "approved": False,
+                        "status": "awaiting_approval",
+                        "error_code": "invalid_selection",
+                        "supervisor_decision": "ASK_USER",
+                    }
+                chosen = ids[0]
             return {
                 "approved": True,
                 "approved_itinerary_id": chosen,
                 "status": "scheduling",
+                "error_code": None,
             }
         if action == "revise":
             update = interpret_revision(
@@ -522,7 +533,7 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
 
     def after_critic(state: RootPlanningState) -> str:
         if int(state.get("supervisor_steps") or 0) >= deps.settings.max_supervisor_steps:
-            return "finalize"
+            return "prepare_approval" if state.get("itineraries") else "finalize"
         critic = state.get("critic_result") or {}
         verification = state.get("verification") or {}
         needs_replan = critic.get("status") == "REVISE" or (
@@ -535,10 +546,9 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
         return "finalize"
 
     def after_replan(state: RootPlanningState):
-        if state.get("supervisor_decision") != "REPLAN":
-            return "finalize"
-        if int(state.get("supervisor_steps") or 0) > deps.settings.max_supervisor_steps:
-            return "finalize"
+        over_step_cap = int(state.get("supervisor_steps") or 0) > deps.settings.max_supervisor_steps
+        if state.get("supervisor_decision") != "REPLAN" or over_step_cap:
+            return "prepare_approval" if state.get("itineraries") else "finalize"
         return _send_ready(state)
 
     def after_human(state: RootPlanningState):
@@ -548,6 +558,8 @@ def compile_itinerary_graph(deps: ItineraryDeps, checkpointer=None):
             return END
         if state.get("supervisor_decision") == "REPLAN" and state.get("status") == "replanning":
             return _send_ready(state)
+        if state.get("itineraries") and state.get("status") == "awaiting_approval":
+            return "prepare_approval"
         return "finalize"
 
     graph.add_node("understand", understand)
@@ -948,11 +960,13 @@ async def _plan(state: dict, deps: ItineraryDeps) -> dict:
         retry=max(0, attempts - 1),
         error=None if itineraries or last_error is None else "planner_invalid_output",
     )
-    return {
-        "itineraries": [dump(item) for item in itineraries],
+    payload: dict = {
         "tasks": [{**task, "status": "completed"}],
         "trace_events": [trace],
     }
+    if itineraries or not state.get("itineraries"):
+        payload["itineraries"] = [dump(item) for item in itineraries]
+    return payload
 
 
 async def _execute(state: dict, deps: ItineraryDeps) -> dict:
@@ -976,10 +990,10 @@ async def _execute(state: dict, deps: ItineraryDeps) -> dict:
     chosen = state.get("approved_itinerary_id")
     raw_plans = list(state.get("itineraries") or [])
     raw = next((item for item in raw_plans if item.get("itinerary_id") == chosen), None)
-    if raw is None and raw_plans:
+    if raw is None and not chosen and len(raw_plans) == 1:
         raw = raw_plans[0]
     if raw is None:
-        return {"status": "failed", "error_code": "invalid_selection"}
+        return {"status": "awaiting_approval", "error_code": "invalid_selection", "approved": False}
     itinerary = Itinerary.model_validate(raw)
     actions: list[ExecutionActionResult] = []
     for item in itinerary.items:

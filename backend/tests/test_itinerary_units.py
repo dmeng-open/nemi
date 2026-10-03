@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.agents.nodes import EventLog
-from app.agents.v3.artifacts import (
+from app.agents.itinerary.artifacts import (
     CalendarAnalysisResult,
     Itinerary,
     ItineraryConstraints,
@@ -14,11 +14,11 @@ from app.agents.v3.artifacts import (
     RestaurantResearchArtifact,
     TimeWindowPayload,
 )
-from app.agents.v3.engine import critique, validate_itinerary
-from app.agents.v3.graph import ItineraryDeps, compile_itinerary_graph
-from app.agents.v3.permissions import authorize, tools_for
-from app.agents.v3.reducers import merge_tasks
-from app.agents.v3.routing import decompose_tasks, is_itinerary_request, parse_itinerary_request
+from app.agents.itinerary.engine import critique, validate_itinerary
+from app.agents.itinerary.graph import ItineraryDeps, compile_itinerary_graph
+from app.agents.itinerary.permissions import authorize, tools_for
+from app.agents.itinerary.reducers import merge_tasks
+from app.agents.itinerary.routing import decompose_tasks, is_itinerary_request, parse_itinerary_request
 from app.core.clock import FrozenClock
 from app.core.config import Settings
 from app.core.exceptions import AppError

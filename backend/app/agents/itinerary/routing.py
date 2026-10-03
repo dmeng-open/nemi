@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime, time
 
-from app.agents.v3.artifacts import (
+from app.agents.itinerary.artifacts import (
     AgentTask,
     ItineraryConstraints,
     SupervisorDecision,
@@ -289,7 +289,6 @@ def interpret_revision(message: str, state: dict, *, replan_count: int, max_repl
         "constraints": constraints,
         "tasks": tasks,
         "rejected_candidate_ids": rejected,
-        "itineraries": [],
         "restaurant_research": None if "restaurant" in targets else state.get("restaurant_research"),
         "event_research": None if "events" in targets else state.get("event_research"),
         "supervisor_decision": SupervisorDecision.REPLAN.value,
@@ -331,7 +330,6 @@ def apply_critic_replan(state: dict, *, max_replan: int) -> dict:
     return {
         "tasks": _reopen(list(state.get("tasks") or []), targets),
         "rejected_candidate_ids": rejected,
-        "itineraries": [],
         "restaurant_research": None if "restaurant" in targets else state.get("restaurant_research"),
         "event_research": None if "events" in targets else state.get("event_research"),
         "supervisor_decision": SupervisorDecision.REPLAN.value,

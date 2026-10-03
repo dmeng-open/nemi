@@ -120,4 +120,4 @@ Local only. Set `CALENDAR_PROVIDER=google` and the OAuth variables when a real c
 
 ## Ordered steps
 
-The implementation follows the specialist modules under `backend/app/agents/v3/`, then persistence, the orchestrator branch, the React checklist and itinerary cards, then the evals.
+The implementation follows the specialist modules under `backend/app/agents/itinerary/`, then persistence, the orchestrator branch, the React checklist and itinerary cards, then the evals.
