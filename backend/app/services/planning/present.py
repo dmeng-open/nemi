@@ -214,6 +214,7 @@ def _candidate_response(row: RecommendationCandidate) -> CandidateResponse:
         explanation=row.explanation or "",
         calendar_checked=bool(payload.get("calendar_checked", True)),
         travel_time_is_estimate=bool(payload.get("travel_time_is_estimate", False)),
+        listed_time_missing=bool(payload.get("listed_time_missing", False)),
     )
 
 

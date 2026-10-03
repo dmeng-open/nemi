@@ -41,6 +41,7 @@ export type Candidate = {
   explanation: string;
   calendar_checked: boolean;
   travel_time_is_estimate: boolean;
+  listed_time_missing?: boolean;
 };
 
 export type TimelineItem = {

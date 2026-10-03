@@ -34,6 +34,7 @@ def template_explanation(item: RankedCandidate, context: RankingContext) -> str:
         item.schedule_compatible
         and context.calendar_read == "ok"
         and item.candidate.calendar_checked
+        and not item.candidate.listed_time_missing
     ):
         reasons.append("fits your open time")
     if (
@@ -97,7 +98,7 @@ def _allowed_numbers(candidate: Candidate, zone: ZoneInfo) -> set[str]:
     if candidate.rating is not None:
         allowed.add(f"{float(candidate.rating):.1f}")
     for moment in (candidate.start_datetime, candidate.end_datetime):
-        if moment is None:
+        if moment is None or candidate.listed_time_missing:
             continue
         local = moment.astimezone(zone) if moment.tzinfo is not None else moment.replace(tzinfo=zone)
         allowed.add(str(local.hour))

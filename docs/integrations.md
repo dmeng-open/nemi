@@ -17,6 +17,17 @@ A missing key or a failed search does not show demo events.
 
 ## Google Places
 
+Places API (New) is billed by Google. A restaurant search is not free, and the monthly allowance is small. Leave this off if you do not want that bill:
+
+```env
+PLACE_PROVIDER=mock
+GOOGLE_PLACES_API_KEY=
+```
+
+Restaurant plans then use the demo catalog. Events and Calendar do not use Places and do not incur a Places charge.
+
+Turn it on only when you accept the cost:
+
 1. Enable Places API (New) and create an API key.
 2. Set `GOOGLE_PLACES_API_KEY`.
 3. Set `PLACE_PROVIDER=google`.
@@ -26,11 +37,48 @@ The field mask is the explicit place list in the V1 plan. It is never `*`.
 
 ## Google Calendar
 
-1. In Google Cloud, create an OAuth client for a web application.
-2. Set the authorized redirect URI to `http://localhost:8000/api/integrations/google/calendar/callback`.
-3. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` to that same callback.
-4. Set `CALENDAR_PROVIDER=google`.
-5. Open Integrations and choose Connect.
+Google Calendar is separate from Places. The Calendar API does not use a Places key, and connecting your calendar does not turn on restaurant search.
+
+You will not see **Connect** while `CALENDAR_PROVIDER=local`. The Integrations page then says the calendar is Local. That is the current default.
+
+### 1. Create the Google Cloud credentials
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and create a project, or pick one you already have.
+2. Enable **Google Calendar API** for that project. Do not enable Places.
+3. Open **APIs & Services → OAuth consent screen**. Choose External, name the app, and add your own Google account under **Test users**. While the app is in Testing, only those users can connect. You do not need to publish the app.
+4. Open **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+5. Application type: **Web application**.
+6. Authorized redirect URI, exactly:
+
+   `http://localhost:8000/api/integrations/google/calendar/callback`
+
+   That is the API port, not the React port `5173`.
+7. Copy the client ID and client secret. They go in `.env` only.
+
+### 2. Point Nemi at those credentials
+
+In `.env`:
+
+```env
+CALENDAR_PROVIDER=google
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:8000/api/integrations/google/calendar/callback
+APP_BASE_URL=http://localhost:5173
+```
+
+Leave `PLACE_PROVIDER=mock` unless you intend to pay for Places. Restart the API after saving `.env`. A running server keeps the old settings until it restarts.
+
+### 3. Connect your account
+
+1. Open `http://localhost:5173/integrations`.
+2. The calendar row should say **Not connected**, with a **Connect** button. If it still says **Local**, the API did not pick up `CALENDAR_PROVIDER=google`.
+3. Choose **Connect** and sign in as the test user you added. Allow access to calendar events.
+4. Google sends you back to Integrations. The row says **Connected**. Nemi does not show your email, because it does not request an email scope.
+
+After that, approve a plan with **Add to schedule**. Nemi reads your primary calendar for conflicts and creates one event there. Approving the same plan again does not create a second event. If Google cannot save it, the plan stays unscheduled and offers **Download .ics**.
+
+The local list on the Integrations page is a notebook. Those sample rows are not your Google events while `CALENDAR_PROVIDER=google`.
 
 The requested scope is only `https://www.googleapis.com/auth/calendar.events`. Nemi does not request `openid` or `email`. Connected is shown without an account email.
 

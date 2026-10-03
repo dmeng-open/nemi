@@ -74,6 +74,8 @@ def schedule_parts(
 ) -> tuple[float, bool]:
     if calendar_read != "ok":
         return 0.5, True
+    if candidate.listed_time_missing:
+        return 0.5, True
     start = candidate.start_datetime
     end = candidate.end_datetime
     if start is None or end is None or end <= start:

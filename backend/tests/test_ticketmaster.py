@@ -108,8 +108,14 @@ async def test_ticketmaster_date_only_is_not_a_midnight_block() -> None:
 
     provider = TicketmasterEventProvider(API_KEY, client=_client(handler))
     found = await provider.search_events(_query())
-    assert [event.external_id for event in found] == ["timed"]
-    event = found[0]
+    assert [event.external_id for event in found] == ["date-only", "timed"]
+    undated = found[0]
+    assert undated.listed_time_missing is True
+    assert undated.start.hour == 12
+    assert undated.start.minute == 0
+    assert undated.end - undated.start == timedelta(hours=2)
+    event = found[1]
+    assert event.listed_time_missing is False
     assert event.start.hour == 19
     assert event.start.minute == 30
     assert event.end - event.start == timedelta(hours=2)

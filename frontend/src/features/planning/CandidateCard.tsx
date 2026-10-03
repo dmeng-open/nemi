@@ -52,7 +52,9 @@ export function CandidateCard({
         <p className="text-sm leading-6 text-muted">
           {formatDay(candidate.start, timeZone)}
           <br />
-          {formatRange(candidate.start, candidate.end, timeZone)}
+          {candidate.listed_time_missing
+            ? "Start time was not listed"
+            : formatRange(candidate.start, candidate.end, timeZone)}
         </p>
         <p className="text-sm">
           {formatPrice(candidate.price_min, candidate.price_level, candidate.travel_time_is_estimate)}
@@ -67,11 +69,13 @@ export function CandidateCard({
           <p className="mt-1 text-sm leading-6 text-muted">{candidate.explanation}</p>
         </div>
         <p className="text-sm text-sage">
-          {candidate.calendar_checked === false
-            ? "Schedule was not checked."
-            : candidate.schedule_compatible
-              ? "Fits your open time"
-              : "Check the schedule before adding it"}
+          {candidate.listed_time_missing
+            ? "Start time was not listed. A calendar block would use noon as a placeholder."
+            : candidate.calendar_checked === false
+              ? "Schedule was not checked."
+              : candidate.schedule_compatible
+                ? "Fits your open time"
+                : "Check the schedule before adding it"}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           {candidate.source_url ? (

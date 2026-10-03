@@ -238,7 +238,7 @@ def _normalize_events(
         if not isinstance(event_id, str) or not event_id or len(event_id) > MAX_CANDIDATE_ID:
             skipped += 1
             continue
-        start, end = _event_times(raw, zone)
+        start, end, listed_time_missing = _event_times(raw, zone)
         if start is None or end is None:
             skipped += 1
             continue
@@ -284,23 +284,45 @@ def _normalize_events(
                 external_id=event_id,
                 retrieved_at=retrieved_at,
                 travel_time_is_estimate=estimate,
+                listed_time_missing=listed_time_missing,
             )
         )
     return found, skipped
 
 
-def _event_times(raw: dict, fallback: ZoneInfo) -> tuple[datetime | None, datetime | None]:
+def _event_times(raw: dict, fallback: ZoneInfo) -> tuple[datetime | None, datetime | None, bool]:
     dates = raw.get("dates")
     if not isinstance(dates, dict):
-        return None, None
+        return None, None, False
     zone = _event_zone(dates.get("timezone"), fallback)
-    start = _point_time(dates.get("start"), zone)
+    start_point = dates.get("start")
+    start = _point_time(start_point, zone)
     if start is None:
-        return None, None
+        start = _date_only_start(start_point, zone)
+        if start is None:
+            return None, None, False
+        return start, start + DEFAULT_EVENT_DURATION, True
     end = _point_time(dates.get("end"), zone)
     if end is None or end <= start:
         end = start + DEFAULT_EVENT_DURATION
-    return start, end
+    return start, end, False
+
+
+def _date_only_start(point: object, zone: ZoneInfo) -> datetime | None:
+    """Keep a dated listing that has no clock time. Noon is a placeholder, not midnight."""
+    if not isinstance(point, dict):
+        return None
+    local_date = point.get("localDate")
+    if not isinstance(local_date, str) or not local_date.strip():
+        return None
+    if isinstance(point.get("localTime"), str) and point.get("localTime").strip():
+        return None
+    if isinstance(point.get("dateTime"), str) and point.get("dateTime").strip():
+        return None
+    try:
+        return datetime.combine(date.fromisoformat(local_date), time(12, 0), tzinfo=zone)
+    except ValueError:
+        return None
 
 
 def _event_zone(name: object, fallback: ZoneInfo) -> ZoneInfo:

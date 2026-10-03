@@ -29,6 +29,11 @@ def _description(candidate: Candidate, explanation: str | None) -> str:
         lines.append(explanation)
     if candidate.source_url:
         lines.append(candidate.source_url)
+    if candidate.listed_time_missing:
+        lines.append(
+            "Ticketmaster listed this date without a start time. "
+            "The calendar block is a noon placeholder, not a published show time."
+        )
     return "\n\n".join(lines)
 
 

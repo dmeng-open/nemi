@@ -31,3 +31,4 @@ class Candidate(BaseModel):
     retrieved_at: datetime | None = None
     travel_time_is_estimate: bool = False
     calendar_checked: bool = True
+    listed_time_missing: bool = False

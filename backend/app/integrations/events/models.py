@@ -41,6 +41,7 @@ class EventCandidate(BaseModel):
     external_id: str | None = None
     retrieved_at: datetime | None = None
     travel_time_is_estimate: bool = False
+    listed_time_missing: bool = False
 
     def to_candidate(self) -> Candidate:
         return Candidate(
@@ -67,4 +68,6 @@ class EventCandidate(BaseModel):
             external_id=self.external_id or self.id,
             retrieved_at=self.retrieved_at,
             travel_time_is_estimate=self.travel_time_is_estimate,
+            calendar_checked=not self.listed_time_missing,
+            listed_time_missing=self.listed_time_missing,
         )

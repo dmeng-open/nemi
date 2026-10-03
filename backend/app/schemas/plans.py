@@ -61,6 +61,7 @@ class CandidateResponse(BaseModel):
     explanation: str
     calendar_checked: bool = True
     travel_time_is_estimate: bool = False
+    listed_time_missing: bool = False
 
 
 class TimelineItemResponse(BaseModel):

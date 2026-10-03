@@ -28,17 +28,21 @@ export function Confirmation({
       <p className="mt-4 text-base leading-7">
         {formatDay(candidate.start, timeZone)}
         <br />
-        {formatRange(candidate.start, candidate.end, timeZone)}
+        {candidate.listed_time_missing
+          ? "Start time was not listed. Adding it uses noon to 2:00 PM as a placeholder."
+          : formatRange(candidate.start, candidate.end, timeZone)}
       </p>
       <p className="mt-4 text-sm text-muted">
         Travel estimate: {candidate.travel_minutes != null ? `${candidate.travel_minutes} minutes` : formatTravel(null, candidate.distance_km) || "not estimated"}
       </p>
       <p className="mt-2 text-sm text-sage">
-        {candidate.calendar_checked === false
-          ? "Schedule was not checked."
-          : candidate.schedule_compatible
-            ? "No conflicts detected."
-            : "This overlaps something on your calendar."}
+        {candidate.listed_time_missing
+          ? "Start time was not listed."
+          : candidate.calendar_checked === false
+            ? "Schedule was not checked."
+            : candidate.schedule_compatible
+              ? "No conflicts detected."
+              : "This overlaps something on your calendar."}
       </p>
       {error ? (
         <p className="mt-4 text-sm text-danger" role="alert">
